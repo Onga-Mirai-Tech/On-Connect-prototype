@@ -12,7 +12,9 @@ import { GroupChatCreateScreen } from "../screens/GroupChatCreateScreen";
 import { MembersScreen } from "../screens/MembersScreen";
 import { IncomingCallScreen } from "../screens/IncomingCallScreen";
 import { BulletinScreen } from "../screens/BulletinScreen";
+import { BulletinDetailScreen } from "../screens/BulletinDetailScreen";
 import { BulletinEditScreen } from "../screens/BulletinEditScreen";
+import { CalendarScreen } from "../screens/CalendarScreen";
 import { LinksScreen } from "../screens/LinksScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { HeaderStatus } from "./HeaderStatus";
@@ -27,6 +29,7 @@ export type ChatStackParamList = {
 
 export type BulletinStackParamList = {
   BulletinList: undefined;
+  BulletinDetail: { postId: string };
   BulletinEdit: { postId?: string };
 };
 
@@ -35,6 +38,7 @@ export type HomeTabParamList = {
   ChatTab: NavigatorScreenParams<ChatStackParamList> | undefined;
   Members: undefined;
   BulletinTab: NavigatorScreenParams<BulletinStackParamList> | undefined;
+  Calendar: undefined;
   Links: undefined;
   Settings: undefined;
 };
@@ -51,6 +55,7 @@ const tabIcons: Record<keyof HomeTabParamList, IoniconName> = {
   ChatTab: "chatbubbles-outline",
   Members: "people-outline",
   BulletinTab: "clipboard-outline",
+  Calendar: "calendar-outline",
   Links: "link-outline",
   Settings: "settings-outline",
 };
@@ -91,12 +96,13 @@ function BulletinStackNavigator() {
         component={BulletinScreen}
         options={{ title: "掲示板", headerLeft: () => <HeaderStatus /> }}
       />
+      <BulletinStack.Screen name="BulletinDetail" component={BulletinDetailScreen} options={{ title: "" }} />
       <BulletinStack.Screen name="BulletinEdit" component={BulletinEditScreen} options={{ title: "投稿" }} />
     </BulletinStack.Navigator>
   );
 }
 
-/** ホーム画面（7章 2番）：チャット／メンバー／掲示板／リンク集のタブ構成 + 設定（カレンダー機能は廃止） */
+/** ホーム画面（7章 2番）：チャット／メンバー／掲示板／カレンダー／リンク集のタブ構成 + 設定 */
 function HomeTabs() {
   return (
     <HomeTab.Navigator
@@ -111,6 +117,7 @@ function HomeTabs() {
       <HomeTab.Screen name="ChatTab" component={ChatStackNavigator} options={{ title: "チャット", headerShown: false }} />
       <HomeTab.Screen name="Members" component={MembersScreen} options={{ title: "メンバー" }} />
       <HomeTab.Screen name="BulletinTab" component={BulletinStackNavigator} options={{ title: "掲示板", headerShown: false }} />
+      <HomeTab.Screen name="Calendar" component={CalendarScreen} options={{ title: "カレンダー" }} />
       <HomeTab.Screen name="Links" component={LinksScreen} options={{ title: "リンク集" }} />
       <HomeTab.Screen name="Settings" component={SettingsScreen} options={{ title: "設定" }} />
     </HomeTab.Navigator>

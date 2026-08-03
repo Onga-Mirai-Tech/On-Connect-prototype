@@ -7,14 +7,15 @@
 | Construct | 内容 | 対応する設計書の章 |
 |---|---|---|
 | `AuthConstruct` | Cognito User Pool・アプリクライアント・グループ(Admin/Member) | 5.1.1, 5.1.3 |
-| `DatabaseConstruct` | DynamoDBテーブル（Users/Roles/MemberCategories/ChatRooms/Messages/BulletinPosts/CallLogs/OrgLinks） | 8章 |
+| `DatabaseConstruct` | DynamoDBテーブル（Users/Roles/MemberCategories/ChatRooms/Messages/BulletinPosts/ScheduleCache/CallLogs/OrgLinks/OrgSettings） | 8章 |
 | `StorageConstruct` | 添付ファイル用S3バケット + CloudFront配信 | 5.2.1, 5.3.2 |
 | `ChatConstruct` | AppSync GraphQL API（チャットのリアルタイム配信・予約送信の保存・既読管理） | 5.2 |
 | `SchedulerConstruct` | Messagesテーブルのstreamsを起点にEventBridge Schedulerへ登録するLambda群、および通知ステータスの毎朝自動リセット（cron 7:00 Asia/Tokyo） | 5.2.2, 5.1.2拡張 |
 | `NotificationConstruct` | 新着チャット・掲示板更新のプッシュ通知（通知ON/OFF・緊急通知の判定） | 5.1.2, 5.2.3, 5.3.4 |
-| `ApiConstruct` | ユーザー管理／掲示板CRUD／リンク集／音声通話発信のREST API | 5.1, 5.3, 5.5, 5.2.4 |
+| `ApiConstruct` | ユーザー管理／掲示板CRUD／カレンダー（閲覧+連携設定）／リンク集／音声通話発信のREST API | 5.1, 5.3〜5.5, 5.2.4 |
 
-カレンダー機能（閲覧専用ビュー）は廃止し、リンク集からGoogleカレンダーのURLへ直接遷移する方式に変更した。
+カレンダーの作成・編集はGoogleカレンダー側で行う運用を変えず、アプリは閲覧専用のキャッシュ表示を提供する
+（外部リンク集にも同じGoogleカレンダーへの直接リンクを併設している）。
 
 `bin/infra.ts` がエントリポイントで、`OnConnectStack` を1つ合成する。環境名は `-c envName=prod` のように CDK context で切り替える（未指定時は `dev`）。
 
@@ -47,6 +48,7 @@ npm test --workspace infra
 - Users/Roles/MemberCategories・掲示板・リンク集のDynamoDB CRUD実装
 - Messagesテーブル Streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule 実装（予約送信の取消・編集に対応）
 - プッシュ通知Lambda内での `notificationStatus` / `forceNotify` 判定ロジック（音声通話の着信通知には `forceNotify` を適用しない点に注意）
+- Google Calendar連携（`lambda/calendar/syncGoogleCalendar.ts` 冒頭コメント参照。サービスアカウント方式を推奨し、対象カレンダーIDは OrgSettings テーブルで管理・管理者画面から設定）
 - Amazon Chime SDK Meeting/Attendee作成、CallLogsへの記録
 
 `lambda/users/dailyNotificationReset.ts`（毎朝7:00 Asia/Tokyo に notificationStatus を一律ONへ戻す）は実装済み。

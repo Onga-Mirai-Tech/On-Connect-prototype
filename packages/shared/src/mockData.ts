@@ -5,15 +5,44 @@ import type {
   ChatRoom,
   Message,
   BulletinPost,
+  BulletinComment,
+  ScheduleCacheEvent,
   OrgLink,
+  Reaction,
 } from "./types";
+
+/** チャット・掲示板で共通利用するリアクション用の絵文字パレット */
+export const reactionEmojis = ["👍", "❤️", "😂", "😮", "😢"];
+
+/**
+ * リアクションの追加・解除を行う純粋関数（チャット・掲示板で共通利用）。
+ * 対象の絵文字リアクションが無ければ新規作成、あれば自分の参加をトグルする。
+ * トグルの結果、参加者が0人になったリアクションは配列から取り除く。
+ */
+export const toggleReaction = (reactions: Reaction[] | undefined, emoji: string, userId: string): Reaction[] => {
+  const list = reactions ? reactions.map((r) => ({ ...r, userIds: [...r.userIds] })) : [];
+  const idx = list.findIndex((r) => r.emoji === emoji);
+  if (idx === -1) {
+    list.push({ emoji, userIds: [userId] });
+    return list;
+  }
+  const hasReacted = list[idx].userIds.includes(userId);
+  list[idx].userIds = hasReacted
+    ? list[idx].userIds.filter((id) => id !== userId)
+    : [...list[idx].userIds, userId];
+  if (list[idx].userIds.length === 0) {
+    list.splice(idx, 1);
+  }
+  return list;
+};
 
 /**
  * 機能デモ用のダミーデータ。
- * バックエンド（AWS）が未接続の段階でも、メンバー一覧・チャット・掲示板・
+ * バックエンド（AWS）が未接続の段階でも、メンバー一覧・チャット・掲示板・カレンダー・
  * リンク集の見え方を確認できるようにするためのモックであり、実データではない。
  * `apps/web` `apps/mobile` の各ページから直接importして表示に使う。
- * カレンダー機能は廃止し、リンク集からGoogleカレンダーのURLへ直接遷移する方式に変更した。
+ * カレンダーはGoogleカレンダーで管理し、アプリ内は閲覧専用（サービスアカウント方式でキャッシュ表示）。
+ * リンク集にも同じGoogleカレンダーへの直接リンクを併設している。
  */
 
 /** デモ上の「ログイン中の自分」 */
@@ -178,14 +207,14 @@ export const mockChatRooms: ChatRoom[] = [
   {
     roomId: "room-group-himawari",
     isGroup: true,
-    name: "ひまわり組連絡",
+    name: "GC_ひまわり組連絡",
     memberUserIds: ["user-01", "user-03", "user-05", "user-06"],
     createdAt: "2026-06-01T09:00:00+09:00",
   },
   {
     roomId: "room-group-all",
     isGroup: true,
-    name: "全体連絡",
+    name: "GC_全体連絡",
     memberUserIds: mockMembers.map((m) => m.userId),
     createdAt: "2026-04-01T09:00:00+09:00",
   },
@@ -211,6 +240,7 @@ export const mockMessages: Record<string, Message[]> = {
       readByUserIds: ["user-01", "user-03"],
       status: "sent",
       forceNotify: false,
+      reactions: [{ emoji: "👍", userIds: ["user-01"] }],
       createdAt: "2026-08-01T18:02:00+09:00",
     },
   ],
@@ -245,6 +275,7 @@ export const mockMessages: Record<string, Message[]> = {
       readByUserIds: ["user-01", "user-05"],
       status: "sent",
       forceNotify: false,
+      reactions: [{ emoji: "👍", userIds: ["user-01", "user-03"] }],
       createdAt: "2026-08-02T09:40:00+09:00",
     },
   ],
@@ -265,26 +296,31 @@ export const mockMessages: Record<string, Message[]> = {
 export const mockBulletinPosts: BulletinPost[] = [
   {
     postId: "post-01",
+    title: "【重要】台風接近に伴う臨時休園のお知らせ",
     category: "緊急連絡",
-    body: "台風接近に伴い、明日8/4（火）は臨時休園といたします。今後の予定は追ってご連絡します。",
+    body: "<p><strong>台風接近</strong>に伴い、明日8/4（火）は臨時休園といたします。</p><p>今後の予定は追ってご連絡します。</p>",
     authorId: "user-01",
     visibleCategoryIds: [],
+    reactions: [{ emoji: "😮", userIds: ["user-03", "user-04", "user-07"] }],
     createdAt: "2026-08-03T20:00:00+09:00",
     updatedAt: "2026-08-03T20:00:00+09:00",
   },
   {
     postId: "post-02",
+    title: "夏祭り開催のお知らせ（ボランティア募集）",
     category: "行事",
-    body: "8/8（土）に夏祭りを開催します。ボランティアメンバーを募集していますので、参加可能な方はリンク集のフォームよりご回答ください。",
+    body: "<p>8/8（土）に夏祭りを開催します。</p><p>ボランティアメンバーを募集していますので、参加可能な方はリンク集のフォームよりご回答ください。</p>",
     authorId: "user-02",
     visibleCategoryIds: [],
+    reactions: [{ emoji: "👍", userIds: ["user-01", "user-03", "user-05", "user-09"] }],
     createdAt: "2026-07-28T10:00:00+09:00",
     updatedAt: "2026-07-28T10:00:00+09:00",
   },
   {
     postId: "post-03",
+    title: "契約更新に関する面談のご案内",
     category: "お知らせ",
-    body: "契約更新に関する面談を8月中に実施します。対象の方には別途日程調整のご連絡をします。",
+    body: "<p>契約更新に関する面談を8月中に実施します。</p><p>対象の方には別途日程調整のご連絡をします。</p>",
     authorId: "user-01",
     visibleCategoryIds: ["cat-contract"],
     createdAt: "2026-07-25T13:00:00+09:00",
@@ -292,8 +328,9 @@ export const mockBulletinPosts: BulletinPost[] = [
   },
   {
     postId: "post-04",
+    title: "定例会議 議事録の共有",
     category: "お知らせ",
-    body: "定例会議の議事録を共有します。次回は8/5（水）17:30〜です。",
+    body: "<p>定例会議の議事録を共有します。</p><ul><li>次回は8/5（水）17:30〜</li><li>会場：職員室</li></ul>",
     authorId: "user-02",
     visibleCategoryIds: ["cat-regular", "cat-contract"],
     createdAt: "2026-07-29T18:00:00+09:00",
@@ -301,12 +338,68 @@ export const mockBulletinPosts: BulletinPost[] = [
   },
   {
     postId: "post-05",
+    title: "運動会開催のお知らせ（9/20）",
     category: "行事",
-    body: "運動会は9/20（日）を予定しています。会場設営の詳細は追ってお知らせします。",
+    body: "<p>運動会は9/20（日）を予定しています。</p><p>会場設営の詳細は追ってお知らせします。</p>",
     authorId: "user-01",
     visibleCategoryIds: [],
     createdAt: "2026-07-15T09:00:00+09:00",
     updatedAt: "2026-07-15T09:00:00+09:00",
+  },
+];
+
+export const mockBulletinComments: BulletinComment[] = [
+  {
+    commentId: "comment-01",
+    postId: "post-01",
+    authorId: "user-03",
+    body: "承知しました。園児の保護者にも周知します。",
+    createdAt: "2026-08-03T20:15:00+09:00",
+  },
+  {
+    commentId: "comment-02",
+    postId: "post-02",
+    authorId: "user-05",
+    body: "午前中のシフトで参加できます！",
+    createdAt: "2026-07-28T11:00:00+09:00",
+  },
+  {
+    commentId: "comment-03",
+    postId: "post-02",
+    authorId: "user-09",
+    body: "設営のお手伝いします。",
+    createdAt: "2026-07-28T12:30:00+09:00",
+  },
+];
+
+export const mockScheduleCacheEvents: ScheduleCacheEvent[] = [
+  {
+    eventId: "evt-01",
+    calendarId: "kindergarten-shared",
+    title: "定例会議",
+    startAt: "2026-08-05T17:30:00+09:00",
+    endAt: "2026-08-05T18:30:00+09:00",
+  },
+  {
+    eventId: "evt-02",
+    calendarId: "kindergarten-shared",
+    title: "夏祭り",
+    startAt: "2026-08-08T10:00:00+09:00",
+    endAt: "2026-08-08T14:00:00+09:00",
+  },
+  {
+    eventId: "evt-03",
+    calendarId: "kindergarten-shared",
+    title: "保護者面談週間",
+    startAt: "2026-08-12T09:00:00+09:00",
+    endAt: "2026-08-14T17:00:00+09:00",
+  },
+  {
+    eventId: "evt-04",
+    calendarId: "kindergarten-shared",
+    title: "運動会",
+    startAt: "2026-09-20T09:00:00+09:00",
+    endAt: "2026-09-20T13:00:00+09:00",
   },
 ];
 

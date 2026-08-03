@@ -1,5 +1,6 @@
 import { Construct } from "constructs";
 import * as path from "path";
+import { Duration } from "aws-cdk-lib";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -15,15 +16,18 @@ export interface ApiConstructProps {
   rolesTable: dynamodb.Table;
   memberCategoriesTable: dynamodb.Table;
   bulletinPostsTable: dynamodb.Table;
+  scheduleCacheTable: dynamodb.Table;
+  orgSettingsTable: dynamodb.Table;
   orgLinksTable: dynamodb.Table;
   callLogsTable: dynamodb.Table;
   attachmentsBucket: s3.Bucket;
 }
 
 /**
- * チャット以外の業務ロジック（ユーザー管理／掲示板／リンク集／通話）を扱う REST API。
+ * チャット以外の業務ロジック（ユーザー管理／掲示板／カレンダー／リンク集／通話）を扱う REST API。
  * チャットのリアルタイム部分は AppSync（ChatConstruct）が担当する。
- * カレンダー機能は廃止し、外部リンク集からGoogleカレンダーのURLへ直接リンクする方式に変更した。
+ * カレンダーの管理・編集自体はGoogleカレンダー側で行い、アプリはキャッシュを閲覧専用で提供する
+ * （外部リンク集にも同じGoogleカレンダーへの直接リンクを併設している）。
  */
 export class ApiConstruct extends Construct {
   public readonly restApi: apigateway.RestApi;
@@ -94,6 +98,30 @@ export class ApiConstruct extends Construct {
     bulletinItem.addMethod("GET", new apigateway.LambdaIntegration(bulletinFn), authOptions);
     bulletinItem.addMethod("PUT", new apigateway.LambdaIntegration(bulletinFn), authOptions);
     bulletinItem.addMethod("DELETE", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+
+    // --- カレンダービュー（5.4）：Googleカレンダー閲覧専用キャッシュ ---
+    // 表示対象のカレンダーID（園の共有カレンダー）は OrgSettings テーブルに1件だけ保持し、
+    // 管理者画面（GET/PUT /calendar/config）から設定する。Google側はサービスアカウント方式を
+    // 想定し、対象カレンダーをサービスアカウントのメールアドレスに読み取り専用共有しておく。
+    const calendarFn = new lambdaNode.NodejsFunction(this, "CalendarSyncFn", {
+      entry: path.join(__dirname, "../../lambda/calendar/syncGoogleCalendar.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      timeout: Duration.seconds(30),
+      environment: {
+        SCHEDULE_CACHE_TABLE_NAME: props.scheduleCacheTable.tableName,
+        ORG_SETTINGS_TABLE_NAME: props.orgSettingsTable.tableName,
+      },
+    });
+    props.scheduleCacheTable.grantReadWriteData(calendarFn);
+    props.orgSettingsTable.grantReadWriteData(calendarFn);
+
+    const calendarResource = this.restApi.root.addResource("calendar");
+    const eventsResource = calendarResource.addResource("events");
+    eventsResource.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    const calendarConfigResource = calendarResource.addResource("config");
+    calendarConfigResource.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    calendarConfigResource.addMethod("PUT", new apigateway.LambdaIntegration(calendarFn), authOptions);
 
     // --- 外部リンク集（5.5、カレンダーURLの直接掲載を含む） ---
     const linksFn = new lambdaNode.NodejsFunction(this, "OrgLinksFn", {

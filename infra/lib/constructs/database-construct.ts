@@ -13,8 +13,10 @@ export class DatabaseConstruct extends Construct {
   public readonly chatRoomsTable: dynamodb.Table;
   public readonly messagesTable: dynamodb.Table;
   public readonly bulletinPostsTable: dynamodb.Table;
+  public readonly scheduleCacheTable: dynamodb.Table;
   public readonly callLogsTable: dynamodb.Table;
   public readonly orgLinksTable: dynamodb.Table;
+  public readonly orgSettingsTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, envName: string) {
     super(scope, id);
@@ -67,6 +69,13 @@ export class DatabaseConstruct extends Construct {
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
     });
 
+    this.scheduleCacheTable = new dynamodb.Table(this, "ScheduleCacheTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-ScheduleCache`,
+      partitionKey: { name: "calendarId", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "eventId", type: dynamodb.AttributeType.STRING },
+    });
+
     this.callLogsTable = new dynamodb.Table(this, "CallLogsTable", {
       ...commonProps,
       tableName: `on-connect-${envName}-CallLogs`,
@@ -77,6 +86,13 @@ export class DatabaseConstruct extends Construct {
       ...commonProps,
       tableName: `on-connect-${envName}-OrgLinks`,
       partitionKey: { name: "linkId", type: dynamodb.AttributeType.STRING },
+    });
+
+    // 組織単位の設定値（表示するGoogleカレンダーのID 等）を保持する単一項目ストア
+    this.orgSettingsTable = new dynamodb.Table(this, "OrgSettingsTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-OrgSettings`,
+      partitionKey: { name: "settingId", type: dynamodb.AttributeType.STRING },
     });
   }
 }

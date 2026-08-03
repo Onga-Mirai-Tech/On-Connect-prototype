@@ -3,6 +3,7 @@ import {
   MessageCircle,
   Users,
   ClipboardList,
+  CalendarDays,
   Link2,
   Settings,
   ShieldCheck,
@@ -19,6 +20,7 @@ const baseNavItems = [
   { to: "/chat", label: "チャット", icon: MessageCircle },
   { to: "/members", label: "メンバー", icon: Users },
   { to: "/bulletin", label: "掲示板", icon: ClipboardList },
+  { to: "/calendar", label: "カレンダー", icon: CalendarDays },
   { to: "/links", label: "リンク集", icon: Link2 },
   { to: "/settings", label: "設定", icon: Settings },
 ];
@@ -30,7 +32,7 @@ const adminNavItem = { to: "/admin", label: "管理者", icon: ShieldCheck };
 const navItems = mockCurrentUserIsAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
 
 /**
- * ホーム画面（7章 2番）：チャット／メンバー／掲示板／リンク集のタブ構成。
+ * ホーム画面（7章 2番）：チャット／メンバー／掲示板／カレンダー／リンク集のタブ構成。
  * 下部タブバーは position: fixed でスクロールに追従させ、常に画面内に表示する。
  */
 export function HomeLayout() {

@@ -1,0 +1,105 @@
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { AlertTriangle, Pencil, Send } from "lucide-react";
+import {
+  mockBulletinPosts,
+  mockBulletinComments,
+  mockMembers,
+  mockCurrentUserId,
+  toggleReaction,
+  type BulletinPost,
+  type BulletinComment,
+} from "@on-connect/shared";
+import { colors } from "../theme/colors";
+import { ReactionBar } from "../components/ReactionBar";
+
+const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
+
+/**
+ * 掲示板詳細画面：タイトル・本文（HTML表示）・リアクション・コメントを表示する。
+ * TODO: GET /bulletin-posts/{postId} 、コメントAPIに接続する（現状はダミーデータ表示）
+ */
+export function BulletinDetailPage() {
+  const { postId = "" } = useParams();
+  const initialPost = mockBulletinPosts.find((p) => p.postId === postId);
+
+  const [post, setPost] = useState<BulletinPost | undefined>(initialPost);
+  const [comments, setComments] = useState<BulletinComment[]>(
+    mockBulletinComments.filter((c) => c.postId === postId),
+  );
+  const [commentBody, setCommentBody] = useState("");
+
+  if (!post) {
+    return <p>投稿が見つかりません。</p>;
+  }
+
+  const handleToggleReaction = (emoji: string) => {
+    // TODO: 掲示板リアクションAPIに接続する
+    setPost((prev) => (prev ? { ...prev, reactions: toggleReaction(prev.reactions, emoji, mockCurrentUserId) } : prev));
+  };
+
+  const handleAddComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentBody.trim()) return;
+    // TODO: コメント投稿APIに接続する
+    setComments((prev) => [
+      ...prev,
+      {
+        commentId: `local-${Date.now()}`,
+        postId,
+        authorId: mockCurrentUserId,
+        body: commentBody,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    setCommentBody("");
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <h2 style={{ margin: 0 }}>{post.title}</h2>
+        <Link to={`/bulletin/${post.postId}/edit`} style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <Pencil size={14} /> 編集
+        </Link>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textMuted, margin: "8px 0" }}>
+        {post.category === "緊急連絡" && <AlertTriangle size={12} color={colors.danger} />}
+        <span>{post.category}</span>
+        <span>・{post.createdAt.slice(0, 10)}</span>
+        {post.visibleCategoryIds.length > 0 && <span>・公開範囲限定</span>}
+      </div>
+      <div
+        style={{ border: `1px solid ${colors.surface}`, borderRadius: 14, padding: 16 }}
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: post.body }}
+      />
+      <div style={{ marginTop: 12 }}>
+        <ReactionBar reactions={post.reactions} currentUserId={mockCurrentUserId} onToggle={handleToggleReaction} />
+      </div>
+
+      <h3 style={{ marginTop: 24 }}>コメント（{comments.length}）</h3>
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {comments.map((c) => (
+          <li key={c.commentId} style={{ padding: "8px 0", borderBottom: `1px solid ${colors.surface}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700 }}>{memberName(c.authorId)}</div>
+            <div style={{ fontSize: 13 }}>{c.body}</div>
+          </li>
+        ))}
+        {comments.length === 0 && <p style={{ color: colors.textMuted, fontSize: 13 }}>コメントはまだありません。</p>}
+      </ul>
+      <form onSubmit={handleAddComment} style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <input
+          type="text"
+          value={commentBody}
+          onChange={(e) => setCommentBody(e.target.value)}
+          placeholder="コメントを入力"
+          style={{ flex: 1 }}
+        />
+        <button type="submit" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <Send size={14} /> 送信
+        </button>
+      </form>
+    </div>
+  );
+}

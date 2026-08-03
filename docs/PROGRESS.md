@@ -22,51 +22,60 @@
 
 ## 2. 環境まわりの確認済み事項
 
-- Node.js / npm / AWS CLI / CDK CLI はローカルに導入済み
+- Node.js / npm / AWS CLI / CDK CLI / GitHub CLI（`gh`）はローカルに導入済み
 - AWS SSOプロファイル `dev`（アカウント `978841974977`、`AdministratorAccess`、リージョン `ap-northeast-1`）でログイン可能
-- `cdk bootstrap` 実行済み（CDKToolkitスタックあり）
-- **まだAWSへの実デプロイ（`cdk deploy`）は行っていない**。`cdk synth` とJestテストのみ実施し、いずれも成功
+- `cdk bootstrap` 実行済み（CDKToolkitスタックあり）。**まだAWSへの実デプロイ（`cdk deploy`）は行っていない**
+- GitHubリモート`origin`（`Onga-Mirai-Tech/On-Connect-prototype`）に対して`gh auth login --web`でCLI認証済み。
+  `git push`が通る状態（credential helperは`gh auth setup-git`で設定）
 - Web: `npm run build --workspace apps/web` 成功
 - Mobile: `npx tsc --noEmit`（apps/mobile内）成功。シミュレータでの実機確認は未実施
+- `infra`: `cdk synth` と Jestテスト（5件）成功
 
 ## 3. 主要な意思決定・変更履歴（時系列）
 
 1. **雛形作成**：design.mdを基にinfra(CDK)/apps/web/apps/mobile/packages/sharedの一式を新規作成
 2. **動作確認**：`npm install`、`cdk synth`、web build、ブラウザ実クリック確認を実施。バグ2件を発見・修正
-   - `infra/tsconfig.json`の`typeRoots`設定ミス（npm workspacesのホイスト先を見ていなかった）
-   - Lambda環境変数`TZ`はAWS予約キーで実デプロイが失敗する不具合
-   - Web初期表示でダークモード時に本文が読めないCSSバグ
+   （`infra/tsconfig.json`の`typeRoots`設定ミス、Lambda環境変数`TZ`予約キー問題、ダークモードCSSバグ）
 3. **通知ステータス毎朝7時自動リセット**：EventBridge Scheduler（`cron(0 7 * * ? *)`, Asia/Tokyo）+ Lambda
-   （`infra/lambda/users/dailyNotificationReset.ts`）で**実装済み**（DynamoDB Scan/Update含め本実装、スタブではない）
+   （`infra/lambda/users/dailyNotificationReset.ts`）で**実装済み**（DynamoDB Scan/Update含め本実装）
 4. **個別メッセージの窓口**：チャット一覧に「個別メッセージ」導線を追加（web/mobile）
-5. **カレンダー表示アカウントの設定方針**：Googleサービスアカウント方式を採用する設計にした
-   → **後に機能ごと廃止**（8.参照）
-6. **公式アイコン制作**：design.md記載の「ミント角丸＋トグルスイッチ＋3つ穴コンセント」を
-   Pillowで生成 → ユーザーフィードバックにより**「3つ穴コンセント」モチーフを撤回**し、
+5. **公式アイコン制作**：design.md記載の「ミント角丸＋トグルスイッチ＋3つ穴コンセント」をPillowで生成
+   → フィードバックにより「3つ穴コンセント」モチーフを撤回し、
    「ON/OFFトグルスイッチ＋メンバー3人が線でつながっている」デザインに再生成（現行版）
-7. **メンバー一覧タブ追加**：下部タブに新設。通知ON/OFF表示、個別チャット・音声通話（デモ）をその場から起動可能
-8. **カレンダー機能の完全廃止**：
-   - web/mobileの画面・ナビタブを削除
-   - infra側も `ScheduleCacheTable` / `OrgSettingsTable` / `lambda/calendar/` / 関連APIルートを削除
-     （DynamoDBテーブル数：10→**8個**、テスト更新済み）
-   - 代わりにリンク集の先頭に「園の共有カレンダー」へのリンクを追加
-9. **用語統一「職員→メンバー」**：UI文言だけでなくコード識別子まで全面リネーム
-   （`StaffCategory`→`MemberCategory`、DynamoDBテーブル名`StaffCategories`→`MemberCategories`、
-   Cognitoグループ`Staff`→`Member`など）。デプロイ前だったため安全にリネームできた
-10. **管理者機能はブラウザ版限定**：モバイルから`AdminScreen`ごと削除。Web側も管理者権限を
-    持つメンバーにのみ「管理者」タブを表示（`mockCurrentUserIsAdmin`で判定、現状はダミーデータ判定）
-11. **角丸デザインへの統一**：Web側は`index.css`にグローバル角丸ルール追加、Mobile側は各画面の
-    `borderRadius`を個別に底上げ（8→12、10→16など）。カテゴリ/タブ切り替えもチップ風に統一
-12. **下部タブバーの追従化**：Web側`HomeLayout`のnavを`position: fixed`化。Mobileは
-    `@react-navigation/bottom-tabs`が標準で画面下部に固定されるため変更不要
-13. **検索・ソート機能**：
-    - チャット一覧：メッセージ本文検索（該当ルームのみ表示、一致メッセージのスニペット表示）
-    - メンバー一覧：氏名検索＋ロール別グループ表示（`mockRoles`定義順）
-    - 掲示板：本文検索（カテゴリフィルタと併用可）
-14. **ふりがな対応**：`User`型に`furigana`フィールド追加、全9名分設定。
-    `memberMatchesQuery`（`packages/shared/src/mockData.ts`）で氏名・ふりがな両方に一致する検索を共通化
-15. **ヘッダーにログイン中メンバー表示**：Web/Mobile双方のヘッダー左側に「氏名＋通知ON/OFF」を表示。
-    `NotificationStatusContext`（web/mobile双方に実装）で個人設定画面の通知トグルとヘッダー表示を同期
+6. **メンバー一覧タブ追加**：下部タブに新設。通知ON/OFF表示、個別チャット・音声通話（デモ）をその場から起動可能
+7. **カレンダー機能の廃止 → 復活**：一度は「リンク集への直接リンクのみ」に廃止したが、
+   「閲覧のハードルを下げたい」との要望で**復活**（詳細は15.参照）。最終的には月/週表示を持たない
+   シンプルな「今後の予定」リスト表示に落ち着いた（16.参照）
+8. **用語統一「職員→メンバー」**：UI文言だけでなくコード識別子まで全面リネーム
+   （`StaffCategory`→`MemberCategory`、DynamoDBテーブル名、Cognitoグループ`Staff`→`Member`など）
+9. **管理者機能はブラウザ版限定**：モバイルから`AdminScreen`ごと削除。Web側も管理者権限を
+   持つメンバーにのみ「管理者」タブを表示（`mockCurrentUserIsAdmin`で判定、現状はダミーデータ判定）
+10. **角丸デザインへの統一**：Web側は`index.css`にグローバル角丸ルール追加、Mobile側は各画面の
+    `borderRadius`を個別に底上げ。カテゴリ/タブ切り替えもチップ風に統一
+11. **下部タブバーの追従化**：Web側`HomeLayout`のnavを`position: fixed`化（Mobileは標準で対応済み）
+12. **検索・ソート機能**：チャット一覧（本文検索）／メンバー一覧（氏名検索＋ロール別グループ表示）／
+    掲示板（本文検索、カテゴリフィルタと併用可）
+13. **ふりがな対応**：`User`型に`furigana`フィールド追加、全9名分設定。
+    `memberMatchesQuery`で氏名・ふりがな両方に一致する検索を共通化
+14. **ヘッダーにログイン中メンバー表示**：Web/Mobile双方のヘッダー左側に「氏名＋通知ON/OFF」を表示。
+    `NotificationStatusContext`（web/mobile双方）で個人設定画面の通知トグルとヘッダー表示を同期
+15. **グループチャット名にGC_接頭辞／参加メンバー表示／個人チャットの相手の通知状態表示**：
+    グループ作成時に自動で`GC_`を付与（`GroupChatCreatePage/Screen`でプレフィックス固定表示）、
+    グループチャット詳細に参加メンバー一覧、1対1チャットに相手のON/OFF状態を表示
+16. **カレンダー機能の再実装＋簡素化**：サービスアカウント方式の閲覧専用ビューとしてinfra
+    （`ScheduleCacheTable`/`OrgSettingsTable`/`lambda/calendar/`/関連APIルート）を復元。
+    その後の要望で月表示／週表示のトグルは削除し、**「今後の予定」のみのリスト表示**に変更
+    （過去のイベントはフィルタで非表示）。リンク集の「園の共有カレンダー」直リンクも並行して維持
+17. **チャットにリアクション機能**：メッセージに絵文字リアクション（👍❤️😂😮😢）を追加。
+    共通コンポーネント`ReactionBar`（web/mobileそれぞれに実装）、トグルロジックは
+    `packages/shared`の`toggleReaction`関数で共通化
+18. **掲示板の構成変更（タイトル＋HTML本文＋添付ファイル）**：
+    - `BulletinPost`に`title`フィールドを追加、`body`はHTML文字列として扱う設計に変更
+    - 投稿・編集画面に簡易HTML編集ツールバー（太字/斜体/下線/リンク/箇条書き）+ ライブプレビューを実装
+      （`HtmlEditor`コンポーネント。Mobileは`react-native-webview`でプレビュー描画）
+    - 一覧画面はタイトルを太字で強調し、本文はHTMLタグを除いた冒頭プレビューを表示
+    - 新設した「掲示板詳細画面」（`BulletinDetailPage`/`BulletinDetailScreen`）で本文全文表示・
+      リアクション・コメント機能を実装（`BulletinComment`型、`mockBulletinComments`を追加）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -78,28 +87,35 @@
 ## 5. 実装状況（本実装 vs スタブ）
 
 ### 本実装済み（実際に動くロジック）
-- CDKインフラのリソース定義一式（Cognito、DynamoDB 8テーブル、AppSync、S3+CloudFront、
-  EventBridge Scheduler、API Gateway）
+- CDKインフラのリソース定義一式（Cognito、DynamoDB **10テーブル**、AppSync、S3+CloudFront、
+  EventBridge Scheduler、API Gateway。カレンダー関連の`ScheduleCache`/`OrgSettings`含む）
 - 通知ステータス毎朝7時自動リセットLambda（`dailyNotificationReset.ts`）
 - Web/Mobileの全画面UI（ダミーデータ`packages/shared/src/mockData.ts`で表示）
-- 検索・フィルタ・ソート・ヘッダー連携などのフロントエンドロジック
+- 検索・フィルタ・ソート・ヘッダー連携・リアクション・コメント投稿などのフロントエンドロジック
+  （いずれもローカルstateで完結。リロードで消える＝バックエンド未接続）
 
 ### 未実装（TODOコメントあり、501スタブ等）
 - ユーザー/掲示板/リンク集のDynamoDB CRUD Lambda（`infra/lambda/**`）
+- **Google Calendar API連携**：`infra/lambda/calendar/syncGoogleCalendar.ts`はまだ501スタブ。
+  サービスアカウント認証・Calendar API呼び出し・ScheduleCacheへの保存は未実装
+  （ユーザーへ確認済み：「現状はこのままでOK」、実装は今後の課題として保留中）
 - Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule
   （予約送信メッセージの実スケジューリング）
-- プッシュ通知Lambda内の実際の送信ロジック（`notificationStatus`/`forceNotify`判定は設計済みだが未実装）
+- プッシュ通知Lambda内の実際の送信ロジック、リアクション/コメントの永続化API
 - Amazon Chime SDK Meeting/Attendee作成（音声通話は現状デモの着信画面遷移のみ）
 - Cognito認証・AppSyncクライアント接続（web/mobileともにログインはダミーで素通り）
 
 ## 6. 会話内で回答した設計質問（コード変更なし、方針のみ）
 
-- **通知音の設定方針**：未着手・要検討事項として整理。OS標準音を基本とし、緊急連絡は専用音、
+- **通知音の設定方針**：未着手・要検討事項。OS標準音を基本とし、緊急連絡は専用音、
   音声通話着信はループ再生の着信音的UIが必要になる見込み、という方向性を提示済み
-  （`infra/README.md`の「未検討・要判断事項」に追記するかは未対応）
-- **通知OFF中の通知の扱い**：既存設計通り、メッセージ・掲示板本体はサーバーに保存され
-  アプリを開けば閲覧可能（未読バッジも機能する）。抑制されるのはOS通知（バナー・音）のみ。
-  緊急連絡フラグ付きメッセージだけは例外的にOFF中でも配信、音声通話の着信のみ例外なく届かない
+- **通知OFF中の通知の扱い**：メッセージ・掲示板本体はサーバーに保存されアプリを開けば閲覧可能。
+  抑制されるのはOS通知（バナー・音）のみ。緊急連絡フラグ付きメッセージだけは例外的にOFF中でも配信、
+  音声通話の着信のみ例外なく届かない
+- **Googleカレンダーの共有設定方法**：専用の共有カレンダーを新規作成し、カレンダーIDを控えたうえで
+  「特定のユーザーとの共有」（閲覧権限）またはサービスアカウントのメールアドレスへ共有する手順を案内済み。
+  ただし実際にAPI連携するバックエンド実装（上記5.参照）はまだ無いため、現時点ではカレンダーIDを
+  用意してもアプリが自動取得することはできない旨を明示済み
 
 ## 7. 主要ファイルの場所（初見の人向け索引）
 
@@ -108,24 +124,27 @@
 | 設計企画書（オリジナル） | `docs/DESIGN.md` |
 | 本ファイル | `docs/PROGRESS.md` |
 | 共有ドメイン型定義 | `packages/shared/src/types.ts` |
-| ダミーデータ・検索ヘルパー | `packages/shared/src/mockData.ts` |
+| ダミーデータ・検索/リアクションヘルパー | `packages/shared/src/mockData.ts` |
 | CDKスタック本体 | `infra/lib/on-connect-stack.ts` |
 | CDK各種construct | `infra/lib/constructs/*.ts` |
 | Lambdaハンドラ | `infra/lambda/**/*.ts` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ | `apps/web/src/pages/HomeLayout.tsx` |
+| Web: リアクションバー / HTML編集 | `apps/web/src/components/ReactionBar.tsx` / `HtmlEditor.tsx` |
+| Web: 掲示板詳細（リアクション・コメント） | `apps/web/src/pages/BulletinDetailPage.tsx` |
 | Web: 通知状態Context | `apps/web/src/context/NotificationStatusContext.tsx` |
 | Mobile: ナビゲーション定義 | `apps/mobile/src/navigation/AppNavigator.tsx` |
 | Mobile: ヘッダー左側コンポーネント | `apps/mobile/src/navigation/HeaderStatus.tsx` |
+| Mobile: リアクションバー / HTML編集 | `apps/mobile/src/components/ReactionBar.tsx` / `HtmlEditor.tsx` |
+| Mobile: 掲示板詳細 | `apps/mobile/src/screens/BulletinDetailScreen.tsx` |
 | Mobile: 通知状態Context | `apps/mobile/src/context/NotificationStatusContext.tsx` |
-| ブランドアイコン生成スクリプト | `scripts/generate-brand-icon.py` |
-| ブランドアイコン画像 | `assets/brand/*.png` |
+| ブランドアイコン生成スクリプト／画像 | `scripts/generate-brand-icon.py` / `assets/brand/*.png` |
 
 ## 8. 次にやりそうなこと（候補）
 
 - Mobileをシミュレータ/実機で見た目確認
-- infra Lambdaの実装（TODOコメント参照、優先度が高いのはユーザー/掲示板CRUD）
+- Google Calendar API連携の実装（サービスアカウント認証、定期同期Lambda）— ユーザーは現状保留でOKとのこと
+- infra Lambdaの実装（TODOコメント参照、優先度が高いのはユーザー/掲示板CRUD、リアクション/コメントの永続化）
 - Cognito認証・AppSyncクライアント接続（ログインを実際に機能させる）
 - 通知音の仕様確定
 - Amazon Chime SDKの音声通話実装
-- （必要なら）ここまでの変更をgitコミットする　※まだ一度もコミットしていない

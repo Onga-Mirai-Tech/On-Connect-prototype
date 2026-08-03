@@ -8,8 +8,11 @@ import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<BulletinStackParamList, "BulletinList">;
 
+const stripHtml = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
 /**
- * 掲示板一覧・詳細画面（7章 6番）：カテゴリー別フィルター（5.3.1）＋本文検索
+ * 掲示板一覧画面（7章 6番）：カテゴリー別フィルター（5.3.1）＋本文検索
+ * タイトルを目立たせ、本文はHTMLタグを除いた冒頭数行をプレビュー表示する。
  * TODO: GET /bulletin-posts にサーバーサイド検索を実装する（現状はクライアント側フィルタ）。
  */
 export function BulletinScreen({ navigation }: Props) {
@@ -19,7 +22,11 @@ export function BulletinScreen({ navigation }: Props) {
   const posts = [...mockBulletinPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const filteredPosts = posts
     .filter((p) => category === "すべて" || p.category === category)
-    .filter((p) => p.body.toLowerCase().includes(query.toLowerCase()));
+    .filter((p) => {
+      const q = query.toLowerCase();
+      if (!q) return true;
+      return p.title.toLowerCase().includes(q) || stripHtml(p.body).toLowerCase().includes(q);
+    });
 
   return (
     <View style={styles.container}>
@@ -28,7 +35,12 @@ export function BulletinScreen({ navigation }: Props) {
       </Pressable>
       <View style={styles.searchRow}>
         <Ionicons name="search-outline" size={18} color={colors.textMuted} />
-        <TextInput style={styles.searchInput} placeholder="本文を検索" value={query} onChangeText={setQuery} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="タイトル・本文を検索"
+          value={query}
+          onChangeText={setQuery}
+        />
       </View>
       <View style={styles.categories}>
         {categories.map((c) => (
@@ -48,15 +60,19 @@ export function BulletinScreen({ navigation }: Props) {
           <Text>{query.trim() ? "一致する投稿が見つかりません。" : "投稿はまだありません。"}</Text>
         }
         renderItem={({ item }) => (
-          <Pressable onPress={() => navigation.navigate("BulletinEdit", { postId: item.postId })} style={styles.postRow}>
+          <Pressable
+            onPress={() => navigation.navigate("BulletinDetail", { postId: item.postId })}
+            style={styles.postRow}
+          >
             <View style={styles.postMeta}>
               {item.category === "緊急連絡" && <Ionicons name="alert-circle-outline" size={12} color={colors.danger} />}
               <Text style={styles.postCategory}>
                 {item.category} ・ {item.createdAt.slice(0, 10)}
               </Text>
             </View>
-            <Text style={styles.postItem} numberOfLines={2}>
-              {item.body}
+            <Text style={styles.postTitle}>{item.title}</Text>
+            <Text style={styles.postPreview} numberOfLines={2}>
+              {stripHtml(item.body)}
             </Text>
           </Pressable>
         )}
@@ -86,5 +102,6 @@ const styles = StyleSheet.create({
   postRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.surface },
   postMeta: { flexDirection: "row", alignItems: "center", gap: 4 },
   postCategory: { fontSize: 12, color: colors.textMuted },
-  postItem: { marginTop: 2 },
+  postTitle: { fontSize: 16, fontWeight: "700", marginTop: 2 },
+  postPreview: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
 });

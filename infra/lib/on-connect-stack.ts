@@ -50,6 +50,8 @@ export class OnConnectStack extends Stack {
       rolesTable: db.rolesTable,
       memberCategoriesTable: db.memberCategoriesTable,
       bulletinPostsTable: db.bulletinPostsTable,
+      scheduleCacheTable: db.scheduleCacheTable,
+      orgSettingsTable: db.orgSettingsTable,
       orgLinksTable: db.orgLinksTable,
       callLogsTable: db.callLogsTable,
       attachmentsBucket: storage.attachmentsBucket,

@@ -14,8 +14,8 @@ describe("OnConnectStack", () => {
     template.resourceCountIs("AWS::Cognito::UserPool", 1);
   });
 
-  test("主要テーブルが8個作成される", () => {
-    template.resourceCountIs("AWS::DynamoDB::Table", 8);
+  test("主要テーブルが10個作成される", () => {
+    template.resourceCountIs("AWS::DynamoDB::Table", 10);
   });
 
   test("通知ステータスの毎朝自動リセット用スケジュールが作成される", () => {

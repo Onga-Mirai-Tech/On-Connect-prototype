@@ -40,6 +40,12 @@ export interface User {
 
 export type MessageStatus = "scheduled" | "sent";
 
+/** 絵文字リアクション（チャットメッセージ・掲示板投稿で共通利用） */
+export interface Reaction {
+  emoji: string;
+  userIds: string[];
+}
+
 export interface ChatRoom {
   roomId: string;
   isGroup: boolean;
@@ -59,18 +65,51 @@ export interface Message {
   scheduledAt?: string;
   /** 緊急通知フラグ：通知OFFのユーザーにも強制配信する（音声通話には適用しない） */
   forceNotify: boolean;
+  reactions?: Reaction[];
   createdAt: string;
 }
 
 export interface BulletinPost {
   postId: string;
+  title: string;
   category: string;
+  /** HTML編集に対応した本文（保存・表示ともにHTML文字列）。表示側でのサニタイズが必須。 */
   body: string;
   attachmentKeys?: string[];
   authorId: string;
   /** 空配列の場合は全メンバーに公開 */
   visibleCategoryIds: string[];
+  reactions?: Reaction[];
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface BulletinComment {
+  commentId: string;
+  postId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface ScheduleCacheEvent {
+  eventId: string;
+  calendarId: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+}
+
+/**
+ * 表示するGoogleカレンダーの設定（OrgSettingsテーブル、settingId: "googleCalendar"）。
+ * サービスアカウント方式を前提とし、対象カレンダーをサービスアカウントのメールアドレスへ
+ * 読み取り専用共有した上で、ここにカレンダーIDを設定する（メンバー個々のOAuth認可は不要）。
+ * 共有カレンダーの管理・編集自体はGoogleカレンダー側で行い、アプリ内は閲覧専用とする。
+ */
+export interface GoogleCalendarSetting {
+  settingId: "googleCalendar";
+  calendarId: string;
+  updatedBy: string;
   updatedAt: string;
 }
 

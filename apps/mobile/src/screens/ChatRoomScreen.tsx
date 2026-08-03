@@ -7,10 +7,12 @@ import {
   mockMembers,
   mockMessages,
   mockCurrentUserId,
+  toggleReaction,
   type Message,
 } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { ReactionBar } from "../components/ReactionBar";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatRoom">;
 
@@ -25,7 +27,9 @@ export function ChatRoomScreen({ route }: Props) {
   const { roomId } = route.params;
   const room = mockChatRooms.find((r) => r.roomId === roomId);
   const otherMemberId = room?.memberUserIds.find((id) => id !== mockCurrentUserId);
-  const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : memberName(otherMemberId ?? "")) : roomId;
+  const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
+  const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "") : roomId;
+  const participantNames = room?.isGroup ? room.memberUserIds.map((id) => memberName(id)).join("、") : "";
 
   const [messages, setMessages] = useState<Message[]>(mockMessages[roomId] ?? []);
   const [body, setBody] = useState("");
@@ -56,10 +60,44 @@ export function ChatRoomScreen({ route }: Props) {
     // TODO: 発信中UI（自分が発信した側の画面）へ遷移する
   };
 
+  const handleToggleReaction = (messageId: string, emoji: string) => {
+    // TODO: AppSyncのミューテーションでリアクションを永続化する
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, mockCurrentUserId) } : m,
+      ),
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{roomTitle}</Text>
+        <View style={styles.headerInfo}>
+          <Text style={styles.title}>{roomTitle}</Text>
+          {room?.isGroup && (
+            <View style={styles.participantsRow}>
+              <Ionicons name="people-outline" size={13} color={colors.textMuted} />
+              <Text style={styles.participantsText} numberOfLines={2}>
+                {participantNames}
+              </Text>
+            </View>
+          )}
+          {room && !room.isGroup && otherMember && (
+            <View style={styles.participantsRow}>
+              {otherMember.notificationStatus === "ON" ? (
+                <>
+                  <Ionicons name="notifications-outline" size={13} color={colors.brandDark} />
+                  <Text style={[styles.statusText, { color: colors.brandDark }]}>通知ON</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="notifications-off-outline" size={13} color={colors.textMuted} />
+                  <Text style={styles.statusText}>通知OFF（相手には届きにくい状態です）</Text>
+                </>
+              )}
+            </View>
+          )}
+        </View>
         {room && !room.isGroup && (
           <Pressable onPress={handleCall} style={styles.callButton}>
             <Ionicons name="call-outline" size={18} color={colors.brandDark} />
@@ -92,6 +130,13 @@ export function ChatRoomScreen({ route }: Props) {
                 )}
                 <Text>{item.body}</Text>
               </View>
+              <View style={styles.reactionRow}>
+                <ReactionBar
+                  reactions={item.reactions}
+                  currentUserId={mockCurrentUserId}
+                  onToggle={(emoji) => handleToggleReaction(item.messageId, emoji)}
+                />
+              </View>
             </View>
           );
         }}
@@ -122,13 +167,18 @@ export function ChatRoomScreen({ route }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", padding: 16 },
+  headerInfo: { flex: 1, marginRight: 8 },
   title: { fontWeight: "700" },
-  callButton: { flexDirection: "row", alignItems: "center", gap: 4 },
+  participantsRow: { flexDirection: "row", alignItems: "flex-start", gap: 4, marginTop: 4 },
+  participantsText: { flex: 1, fontSize: 12, color: colors.textMuted },
+  statusText: { fontSize: 12, color: colors.textMuted },
+  callButton: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 0 },
   messages: { flex: 1, paddingHorizontal: 16 },
   bubbleWrap: { marginBottom: 8 },
   senderName: { fontSize: 11, color: colors.textMuted, marginBottom: 2 },
   bubble: { borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12, maxWidth: "80%" },
+  reactionRow: { marginTop: 4 },
   tagRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 },
   forceNotifyTag: { fontSize: 11, fontWeight: "700", color: colors.danger },
   composer: { padding: 16, gap: 8 },

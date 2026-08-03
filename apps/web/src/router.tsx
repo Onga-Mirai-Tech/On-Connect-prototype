@@ -8,7 +8,9 @@ import { GroupChatCreatePage } from "./pages/GroupChatCreatePage";
 import { MembersPage } from "./pages/MembersPage";
 import { IncomingCallPage } from "./pages/IncomingCallPage";
 import { BulletinPage } from "./pages/BulletinPage";
+import { BulletinDetailPage } from "./pages/BulletinDetailPage";
 import { BulletinEditPage } from "./pages/BulletinEditPage";
+import { CalendarPage } from "./pages/CalendarPage";
 import { LinksPage } from "./pages/LinksPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AdminPage } from "./pages/AdminPage";
@@ -28,7 +30,9 @@ export const router = createBrowserRouter([
       { path: "members", element: <MembersPage /> },
       { path: "bulletin", element: <BulletinPage /> },
       { path: "bulletin/new", element: <BulletinEditPage /> },
+      { path: "bulletin/:postId", element: <BulletinDetailPage /> },
       { path: "bulletin/:postId/edit", element: <BulletinEditPage /> },
+      { path: "calendar", element: <CalendarPage /> },
       { path: "links", element: <LinksPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "admin", element: <AdminPage /> },

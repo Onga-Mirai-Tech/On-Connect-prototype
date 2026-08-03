@@ -5,18 +5,21 @@ import {
   Tags,
   ClipboardList,
   Link2,
+  CalendarCog,
 } from "lucide-react";
 import { mockMembers, mockRoles, mockMemberCategories, mockOrgLinks } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 
-type AdminTab = "users" | "roles" | "memberCategories" | "bulletinCategories" | "links";
+type AdminTab = "users" | "roles" | "memberCategories" | "bulletinCategories" | "links" | "calendar";
 
 /**
  * 管理者用設定画面（7章 11番）
  * ユーザー管理／ロール・権限管理（ON/OFF編集）／メンバーカテゴリ管理／掲示板カテゴリー管理／リンク集管理
+ * ／カレンダー連携設定（表示するGoogleカレンダーの指定。編集自体はGoogleカレンダー側で行う）
  */
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("users");
+  const [calendarId, setCalendarId] = useState("");
 
   const tabs: { key: AdminTab; label: string; icon: typeof Users }[] = [
     { key: "users", label: "ユーザー管理", icon: Users },
@@ -24,7 +27,12 @@ export function AdminPage() {
     { key: "memberCategories", label: "メンバーカテゴリ管理", icon: Tags },
     { key: "bulletinCategories", label: "掲示板カテゴリー管理", icon: ClipboardList },
     { key: "links", label: "リンク集管理", icon: Link2 },
+    { key: "calendar", label: "カレンダー連携設定", icon: CalendarCog },
   ];
+
+  const handleSaveCalendar = () => {
+    // TODO: PUT /calendar/config を呼び出し、OrgSettingsテーブルへ保存する
+  };
 
   return (
     <div>
@@ -123,6 +131,32 @@ export function AdminPage() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+      {tab === "calendar" && (
+        <section>
+          <h3>カレンダー連携設定</h3>
+          <p style={{ fontSize: 13, color: colors.textMuted, maxWidth: 560 }}>
+            共有カレンダーの作成・編集はこれまで通りGoogleカレンダー側で行います。ここではアプリ内に
+            閲覧専用で表示するカレンダーを指定するだけです。メンバー個々のGoogleアカウント連携は不要です。
+            あらかじめGoogle Cloudでサービスアカウントを作成し、表示したいGoogleカレンダー（園の共有カレンダー）の
+            共有設定でそのサービスアカウントのメールアドレスに「閲覧権限」を付与してください。
+            そのうえで、下記にカレンダーID（共有カレンダーの場合は
+            xxxx@group.calendar.google.com 形式、個人カレンダーの場合はそのアカウントのメールアドレス）を入力します。
+          </p>
+          <label style={{ display: "block", marginTop: 12 }}>
+            カレンダーID
+            <input
+              type="text"
+              value={calendarId}
+              onChange={(e) => setCalendarId(e.target.value)}
+              placeholder="xxxx@group.calendar.google.com"
+              style={{ display: "block", width: 360, marginTop: 4, padding: 8 }}
+            />
+          </label>
+          <button onClick={handleSaveCalendar} style={{ marginTop: 12 }}>
+            保存
+          </button>
         </section>
       )}
     </div>

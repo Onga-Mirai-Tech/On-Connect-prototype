@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Phone, Send, AlertTriangle, Clock } from "lucide-react";
+import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users } from "lucide-react";
 import {
   mockChatRooms,
   mockMembers,
   mockMessages,
   mockCurrentUserId,
+  toggleReaction,
   type Message,
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
+import { ReactionBar } from "../components/ReactionBar";
 
 const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 
@@ -21,7 +23,11 @@ export function ChatRoomPage() {
   const { roomId = "" } = useParams();
   const room = mockChatRooms.find((r) => r.roomId === roomId);
   const otherMemberId = room?.memberUserIds.find((id) => id !== mockCurrentUserId);
-  const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : memberName(otherMemberId ?? "")) : roomId;
+  const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
+  const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "") : roomId;
+  const participantNames = room?.isGroup
+    ? room.memberUserIds.map((id) => memberName(id)).join("、")
+    : "";
 
   const [messages, setMessages] = useState<Message[]>(mockMessages[roomId] ?? []);
   const [body, setBody] = useState("");
@@ -55,12 +61,42 @@ export function ChatRoomPage() {
     // TODO: POST /calls を呼び出し、Chime SDK Meeting/Attendee を取得して発信画面へ遷移する
   };
 
+  const handleToggleReaction = (messageId: string, emoji: string) => {
+    // TODO: AppSyncのミューテーションでリアクションを永続化する
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, mockCurrentUserId) } : m,
+      ),
+    );
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 140px)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <h2>{roomTitle}</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h2 style={{ margin: 0 }}>{roomTitle}</h2>
+          {room?.isGroup && (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 4, fontSize: 12, color: colors.textMuted, marginTop: 4, maxWidth: 480 }}>
+              <Users size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>{participantNames}</span>
+            </div>
+          )}
+          {room && !room.isGroup && otherMember && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, marginTop: 4 }}>
+              {otherMember.notificationStatus === "ON" ? (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, color: colors.brandDark }}>
+                  <Bell size={14} /> 通知ON
+                </span>
+              ) : (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, color: colors.textMuted }}>
+                  <BellOff size={14} /> 通知OFF（相手には届きにくい状態です）
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         {room && !room.isGroup && (
-          <button onClick={handleCall} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={handleCall} style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
             <Phone size={16} /> 発信
           </button>
         )}
@@ -93,6 +129,13 @@ export function ChatRoomPage() {
                   </div>
                 )}
                 <div>{m.body}</div>
+              </div>
+              <div style={{ marginTop: 4 }}>
+                <ReactionBar
+                  reactions={m.reactions}
+                  currentUserId={mockCurrentUserId}
+                  onToggle={(emoji) => handleToggleReaction(m.messageId, emoji)}
+                />
               </div>
             </div>
           );
