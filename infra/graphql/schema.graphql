@@ -1,0 +1,72 @@
+"""
+On-Connect チャット機能（5.2）GraphQLスキーマ
+リアルタイム配信（新着メッセージ・既読）は Subscription で実現する。
+"""
+
+type ChatRoom {
+  roomId: ID!
+  isGroup: Boolean!
+  name: String
+  memberUserIds: [ID!]!
+  createdAt: AWSDateTime!
+}
+
+enum MessageStatus {
+  scheduled
+  sent
+}
+
+type Message {
+  messageId: ID!
+  roomId: ID!
+  senderId: ID!
+  body: String!
+  attachmentKeys: [String!]
+  readByUserIds: [ID!]!
+  status: MessageStatus!
+  scheduledAt: AWSDateTime
+  """緊急通知フラグ：通知OFFのユーザーにも強制配信する（音声通話には適用しない）"""
+  forceNotify: Boolean!
+  createdAt: AWSDateTime!
+}
+
+input SendMessageInput {
+  roomId: ID!
+  senderId: ID!
+  body: String!
+  attachmentKeys: [String!]
+  """指定時に予約送信（5.2.2）。未指定なら即時送信。"""
+  scheduledAt: AWSDateTime
+  """緊急通知として送信するか（管理者ロール等の限定権限、5.2.3）"""
+  forceNotify: Boolean
+}
+
+input MarkReadInput {
+  roomId: ID!
+  messageId: ID!
+  userId: ID!
+}
+
+type Query {
+  getChatRoom(roomId: ID!): ChatRoom
+  listMessagesForRoom(roomId: ID!, limit: Int, nextToken: String): [Message!]!
+}
+
+type Mutation {
+  sendMessage(input: SendMessageInput!): Message!
+  markMessageRead(input: MarkReadInput!): Message!
+  cancelScheduledMessage(roomId: ID!, messageId: ID!): Message!
+}
+
+type Subscription {
+  onMessageSent(roomId: ID!): Message
+    @aws_subscribe(mutations: ["sendMessage"])
+  onMessageRead(roomId: ID!): Message
+    @aws_subscribe(mutations: ["markMessageRead"])
+}
+
+schema {
+  query: Query
+  mutation: Mutation
+  subscription: Subscription
+}

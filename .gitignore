@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+.expo/
+.expo-shared/
+
+# CDK
+infra/cdk.out/
+infra/*.d.ts
+infra/*.js
+!infra/jest.config.js
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Claude Code local settings (personal, not shared)
+.claude/settings.local.json
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# React Native / Expo
+apps/mobile/ios/
+apps/mobile/android/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Test coverage
+coverage/

@@ -1,0 +1,45 @@
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: #33cc99;
+}
+
+/* 全体的に角丸のやわらかいデザインに統一する */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+
+button {
+  cursor: pointer;
+  background: #f4fffb;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+input,
+textarea,
+select {
+  padding: 8px 10px;
+}

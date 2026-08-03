@@ -1,0 +1,22 @@
+{
+  "name": "on-connect",
+  "private": true,
+  "version": "0.1.0",
+  "description": "On-Connect - 幼稚園・保育園・学校向け職員間コミュニケーションアプリ（モノレポ）",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "infra"
+  ],
+  "scripts": {
+    "web:dev": "npm run dev --workspace apps/web",
+    "web:build": "npm run build --workspace apps/web",
+    "mobile:start": "npm run start --workspace apps/mobile",
+    "infra:synth": "npm run synth --workspace infra",
+    "infra:deploy": "npm run deploy --workspace infra",
+    "infra:diff": "npm run diff --workspace infra"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "On-Connect",
+    "slug": "on-connect",
+    "scheme": "onconnect",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#66FFCC",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#66FFCC"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "tech.ongamirai.onconnect",
+      "infoPlist": {
+        "UIBackgroundModes": ["voip", "audio"]
+      }
+    },
+    "android": {
+      "package": "tech.ongamirai.onconnect",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#66FFCC"
+      },
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": ["expo-notifications"]
+  }
+}
