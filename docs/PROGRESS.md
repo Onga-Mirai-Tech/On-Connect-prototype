@@ -76,6 +76,26 @@
     - 一覧画面はタイトルを太字で強調し、本文はHTMLタグを除いた冒頭プレビューを表示
     - 新設した「掲示板詳細画面」（`BulletinDetailPage`/`BulletinDetailScreen`）で本文全文表示・
       リアクション・コメント機能を実装（`BulletinComment`型、`mockBulletinComments`を追加）
+19. **infra Lambda CRUD実装（Users/Roles/MemberCategories、BulletinPosts、OrgLinks）** — ローカル単体テストのみ、
+    **AWSへの実デプロイはまだ行っていない**：
+    - `infra/lambda/common/http.ts`・`dynamo.ts`にレスポンス生成／エラーハンドリング／認証claims取得の共通処理を追加
+    - `infra/lambda/users/index.ts`：Users CRUDに加え、`/roles`・`/member-categories`もパスルーティングで同居
+      （CDK側は元々このLambdaにRoles/MemberCategoriesテーブルの権限を付与済みだったが、APIルートが無かったため
+      `infra/lib/constructs/api-construct.ts`に`/roles`・`/member-categories`リソースを追加）
+    - 「最後の1名の管理者は削除・降格できない」ガード（5.1.3）を実装：`Roles.permissions.manageUsers`を
+      元に判定。ロール削除・メンバーカテゴリ削除も、ユーザーに割り当て中の場合は409で拒否
+    - `infra/lambda/bulletin/crud.ts`：BulletinPosts CRUD＋`visibleCategoryIds`による閲覧フィルタ（5.3.3）。
+      呼び出し元の`memberCategoryId`を引くため、`bulletinFn`にUsersテーブルの読み取り権限・環境変数を追加
+      （元のCDKコードには無かった）
+    - `infra/lambda/links/crud.ts`：OrgLinks CRUD（シンプル）
+    - `userId`はCognitoの`sub`と一致させる前提（`event.requestContext.authorizer.claims.sub`から取得）。
+      ユーザー作成時に呼び出し側が`userId`を明示指定する必要がある（Cognito側のユーザー作成は別途必要、未実装）
+    - 添付ファイルの署名付きURL発行（アップロード／ダウンロード）は今回のスコープ外、`attachmentKeys`の
+      文字列配列を保存・返却するのみ
+    - `@on-connect/shared`をinfraの依存に追加し、Lambda側もドメイン型定義を共有するように変更
+    - テストは`aws-sdk-client-mock`でDynamoDBDocumentClientをモック化し、
+      `infra/test/lambda/{users,bulletin,links}.test.ts`に31件のユニットテストを追加（全件green）。
+      `npm run build --workspace infra`・`cdk synth`も成功を確認済み
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -90,12 +110,13 @@
 - CDKインフラのリソース定義一式（Cognito、DynamoDB **10テーブル**、AppSync、S3+CloudFront、
   EventBridge Scheduler、API Gateway。カレンダー関連の`ScheduleCache`/`OrgSettings`含む）
 - 通知ステータス毎朝7時自動リセットLambda（`dailyNotificationReset.ts`）
+- Users/Roles/MemberCategories・BulletinPosts・OrgLinksのCRUD Lambda（18.参照。**ローカル単体テストのみ確認済み、
+  AWSへの実デプロイは未実施**）
 - Web/Mobileの全画面UI（ダミーデータ`packages/shared/src/mockData.ts`で表示）
 - 検索・フィルタ・ソート・ヘッダー連携・リアクション・コメント投稿などのフロントエンドロジック
   （いずれもローカルstateで完結。リロードで消える＝バックエンド未接続）
 
 ### 未実装（TODOコメントあり、501スタブ等）
-- ユーザー/掲示板/リンク集のDynamoDB CRUD Lambda（`infra/lambda/**`）
 - **Google Calendar API連携**：`infra/lambda/calendar/syncGoogleCalendar.ts`はまだ501スタブ。
   サービスアカウント認証・Calendar API呼び出し・ScheduleCacheへの保存は未実装
   （ユーザーへ確認済み：「現状はこのままでOK」、実装は今後の課題として保留中）
@@ -128,6 +149,8 @@
 | CDKスタック本体 | `infra/lib/on-connect-stack.ts` |
 | CDK各種construct | `infra/lib/constructs/*.ts` |
 | Lambdaハンドラ | `infra/lambda/**/*.ts` |
+| Lambda共通ヘルパー（レスポンス生成・DynamoDBクライアント） | `infra/lambda/common/http.ts` / `dynamo.ts` |
+| Lambda単体テスト（aws-sdk-client-mock使用） | `infra/test/lambda/*.test.ts` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: リアクションバー / HTML編集 | `apps/web/src/components/ReactionBar.tsx` / `HtmlEditor.tsx` |
@@ -142,9 +165,15 @@
 
 ## 8. 次にやりそうなこと（候補）
 
+- **infra Lambda CRUD（Users/Bulletin/Links）をAWS devにデプロイして実機（API Gateway経由）で疎通確認**
+  （未実施。実施する場合、Cognitoテストユーザー作成と初期Roles/MemberCategoriesデータ投入方針の決定が必要。
+  課金は月$数ドル程度の見込み、詳細は本ファイルの元になった会話を参照）
+- リアクション/コメントの永続化（掲示板コメント用のDynamoDBテーブルは未作成）、`notifyOnPost.ts`の実装
+- 予約送信の実スケジューリング（`onMessageStreamChange.ts`/`sendScheduled.ts`）
+- 添付ファイルのS3署名付きURL発行（アップロード／ダウンロード）
 - Mobileをシミュレータ/実機で見た目確認
 - Google Calendar API連携の実装（サービスアカウント認証、定期同期Lambda）— ユーザーは現状保留でOKとのこと
-- infra Lambdaの実装（TODOコメント参照、優先度が高いのはユーザー/掲示板CRUD、リアクション/コメントの永続化）
-- Cognito認証・AppSyncクライアント接続（ログインを実際に機能させる）
+- Cognito認証・AppSyncクライアント接続（ログインを実際に機能させる。現状Web/Mobileともフロントは
+  APIを一切呼んでおらず、全画面`mockData`直参照のまま）
 - 通知音の仕様確定
 - Amazon Chime SDKの音声通話実装

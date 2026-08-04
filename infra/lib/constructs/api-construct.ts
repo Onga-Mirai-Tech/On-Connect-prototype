@@ -78,6 +78,23 @@ export class ApiConstruct extends Construct {
     userItem.addMethod("PUT", new apigateway.LambdaIntegration(usersFn), authOptions);
     userItem.addMethod("DELETE", new apigateway.LambdaIntegration(usersFn), authOptions);
 
+    // ロール・メンバーカテゴリの管理（5.1.3, 5.1.4）も同じLambda（usersFn）が扱う
+    const rolesResource = this.restApi.root.addResource("roles");
+    rolesResource.addMethod("GET", new apigateway.LambdaIntegration(usersFn), authOptions);
+    rolesResource.addMethod("POST", new apigateway.LambdaIntegration(usersFn), authOptions);
+    const roleItem = rolesResource.addResource("{roleId}");
+    roleItem.addMethod("GET", new apigateway.LambdaIntegration(usersFn), authOptions);
+    roleItem.addMethod("PUT", new apigateway.LambdaIntegration(usersFn), authOptions);
+    roleItem.addMethod("DELETE", new apigateway.LambdaIntegration(usersFn), authOptions);
+
+    const memberCategoriesResource = this.restApi.root.addResource("member-categories");
+    memberCategoriesResource.addMethod("GET", new apigateway.LambdaIntegration(usersFn), authOptions);
+    memberCategoriesResource.addMethod("POST", new apigateway.LambdaIntegration(usersFn), authOptions);
+    const memberCategoryItem = memberCategoriesResource.addResource("{categoryId}");
+    memberCategoryItem.addMethod("GET", new apigateway.LambdaIntegration(usersFn), authOptions);
+    memberCategoryItem.addMethod("PUT", new apigateway.LambdaIntegration(usersFn), authOptions);
+    memberCategoryItem.addMethod("DELETE", new apigateway.LambdaIntegration(usersFn), authOptions);
+
     // --- 掲示板CRUD（5.3）：通知送信自体はNotificationConstructがStreams経由で処理 ---
     const bulletinFn = new lambdaNode.NodejsFunction(this, "BulletinFn", {
       entry: path.join(__dirname, "../../lambda/bulletin/crud.ts"),
@@ -86,10 +103,13 @@ export class ApiConstruct extends Construct {
       environment: {
         BULLETIN_POSTS_TABLE_NAME: props.bulletinPostsTable.tableName,
         ATTACHMENTS_BUCKET_NAME: props.attachmentsBucket.bucketName,
+        // 閲覧者のmemberCategoryIdを引くために参照する（visibleCategoryIdsフィルタ、5.3.3）
+        USERS_TABLE_NAME: props.usersTable.tableName,
       },
     });
     props.bulletinPostsTable.grantReadWriteData(bulletinFn);
     props.attachmentsBucket.grantReadWrite(bulletinFn);
+    props.usersTable.grantReadData(bulletinFn);
 
     const bulletinResource = this.restApi.root.addResource("bulletin-posts");
     bulletinResource.addMethod("GET", new apigateway.LambdaIntegration(bulletinFn), authOptions);
