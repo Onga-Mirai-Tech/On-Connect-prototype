@@ -24,7 +24,9 @@
 
 - Node.js / npm / AWS CLI / CDK CLI / GitHub CLI（`gh`）はローカルに導入済み
 - AWS SSOプロファイル `dev`（アカウント `978841974977`、`AdministratorAccess`、リージョン `ap-northeast-1`）でログイン可能
-- `cdk bootstrap` 実行済み。**`OnConnect-dev`スタックはデプロイ済み（20.参照）。課金が発生している状態**
+- `cdk bootstrap` 実行済み。**`OnConnect-dev`スタックは一度デプロイ・実機疎通確認した後、`cdk destroy`
+  ＋孤立したCognito User Poolの手動削除まで完了済み（20.参照）。現在AWS上にdev環境のリソースは無く、
+  課金は発生していない**
 - GitHubリモート`origin`（`Onga-Mirai-Tech/On-Connect-prototype`）に対して`gh auth login --web`でCLI認証済み。
   `git push`が通る状態（credential helperは`gh auth setup-git`で設定）
 - Web: `npm run build --workspace apps/web` 成功
@@ -107,12 +109,32 @@
       `otherAdminCount === 0`で拒否するよう修正し、再現テストを追加した上で再デプロイ・再検証済み
     - 「最後の管理者を削除・降格できない」「ロール／メンバーカテゴリを使用中に削除できない」の
       4パターンすべて実機で409になることを確認済み
-    - 今回は`dev`環境を**残したまま**（`cdk destroy`は未実施）。テストで作成したUsers/Roles/MemberCategories/
-      Cognitoユーザーのデータがそのまま残っている（本文中のBulletinPosts/OrgLinksのテストデータは
-      DELETE APIで削除済み）
+    - 目視確認は不要とのことで、疎通確認後に`cdk destroy`で`OnConnect-dev`スタックを削除済み。
+      **Cognito User Poolのみ`RemovalPolicy.RETAIN`（`infra/lib/constructs/auth-construct.ts`）のため
+      スタック削除時に自動では消えず孤立して残った**が、これも手動で`delete-user-pool`して削除済み。
+      現時点で`dev`環境のAWSリソースは残っておらず、課金は発生していない
     - **未実装のまま残っている課題**：呼び出し元のロール権限（`manageUsers`等）をチェックする認可ロジックが
       まだ無く、認証済みユーザーなら誰でもUsers/Roles/MemberCategoriesを操作できてしまう
-      （5.1.3が本来想定する権限チェックとは別物。次のセッションでの検討事項）
+      （5.1.3が本来想定する権限チェックとは別物。→21.で対応済み）
+21. **Users/Roles/MemberCategoriesの呼び出し元権限チェック（認可）を実装** — 20.で見つけた「認証さえ通れば
+    誰でも操作できる」穴への対応：
+    - `infra/lambda/common/authz.ts`を新設。`getCurrentUserPermissions`/`requirePermission`で、
+      呼び出し元(Cognito sub)→Usersテーブル→Rolesテーブルの順に辿って`RolePermissions`を取得し、
+      指定した権限フラグが無ければ403を返す
+    - `users/index.ts`に適用：Users作成/削除・Roles全操作・MemberCategories全操作の書き込み系に
+      `manageUsers`/`manageRoles`/`manageMemberCategories`をそれぞれ要求
+    - **自己サービス例外**：自分自身の`notificationStatus`のみを変更するPUT（5.1.2の通知ON/OFF切替）は
+      権限チェック無しで本人が行える。それ以外のフィールド変更や他人の更新は`manageUsers`が必要
+    - **初期セットアップのブートストラップ例外**：Users/Roles/MemberCategoriesの各テーブルが完全に空の場合
+      （組織の初回セットアップ前）に限り、最初の1件目の作成は権限チェック無しで行える。
+      これが無いと「誰も管理者権限を持っていないので誰も管理者ロールを作れない」という
+      鶏卵問題になるため（前回のdev環境での動作確認で実際にこの手順を踏んだ）
+    - GET系（一覧・単体取得）は権限チェック対象外（メンバー一覧タブ等、一般メンバーからの閲覧を想定）
+    - bulletin/links（`manageBulletinCategories`/`manageOrgLinks`）には未適用。今回はUsers/Roles/
+      MemberCategoriesのみに絞った（範囲を広げる場合は別タスク）
+    - `infra/test/lambda/users.test.ts`を大幅に拡充（403/ブートストラップ許可/自己サービス例外を含め27件、
+      プロジェクト全体で44件）。dev環境は削除済みのため、今回は**ローカル単体テストのみで確認**
+      （実機での再デプロイ・再検証はまだ行っていない）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -182,10 +204,8 @@
 
 ## 8. 次にやりそうなこと（候補）
 
-- **呼び出し元の権限チェック（認可）の実装**：現状Cognito認証さえ通れば誰でもUsers/Roles/
-  MemberCategoriesを操作できてしまう（20.参照）。`Roles.permissions.manageUsers`等を見て
-  操作を許可するかの判定を`users/index.ts`に追加する必要がある
-- `dev`環境の後片付け方針の決定（残すか`cdk destroy`するか。現状は残したまま、テストデータも残存）
+- **21.の権限チェックをdev環境に再デプロイして実機確認**（今回はローカル単体テストのみ。
+  bulletin/OrgLinksへの同種の権限チェック拡張を含めるかも要検討）
 - リアクション/コメントの永続化（掲示板コメント用のDynamoDBテーブルは未作成）、`notifyOnPost.ts`の実装
 - 予約送信の実スケジューリング（`onMessageStreamChange.ts`/`sendScheduled.ts`）
 - 添付ファイルのS3署名付きURL発行（アップロード／ダウンロード）

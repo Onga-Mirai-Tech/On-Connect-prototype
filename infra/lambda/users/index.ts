@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { GetCommand, PutCommand, ScanCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import type { MemberCategory, Role, User } from "@on-connect/shared";
+import { requirePermission } from "../common/authz";
 import { docClient } from "../common/dynamo";
-import { HttpError, handleRequest, jsonResponse, parseJsonBody, requireParam } from "../common/http";
+import { HttpError, getCurrentUserId, handleRequest, jsonResponse, parseJsonBody, requireParam } from "../common/http";
 
 const USERS_TABLE_NAME = process.env.USERS_TABLE_NAME!;
 const ROLES_TABLE_NAME = process.env.ROLES_TABLE_NAME!;
@@ -26,7 +27,7 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       const userId = requireParam(event, "userId");
       if (httpMethod === "GET") return getUser(userId);
       if (httpMethod === "PUT") return updateUser(userId, event);
-      if (httpMethod === "DELETE") return deleteUser(userId);
+      if (httpMethod === "DELETE") return deleteUser(userId, event);
     }
     if (resource === "/roles") {
       if (httpMethod === "GET") return listRoles();
@@ -36,7 +37,7 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       const roleId = requireParam(event, "roleId");
       if (httpMethod === "GET") return getRole(roleId);
       if (httpMethod === "PUT") return updateRole(roleId, event);
-      if (httpMethod === "DELETE") return deleteRole(roleId);
+      if (httpMethod === "DELETE") return deleteRole(roleId, event);
     }
     if (resource === "/member-categories") {
       if (httpMethod === "GET") return listMemberCategories();
@@ -46,7 +47,7 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       const categoryId = requireParam(event, "categoryId");
       if (httpMethod === "GET") return getMemberCategory(categoryId);
       if (httpMethod === "PUT") return updateMemberCategory(categoryId, event);
-      if (httpMethod === "DELETE") return deleteMemberCategory(categoryId);
+      if (httpMethod === "DELETE") return deleteMemberCategory(categoryId, event);
     }
 
     throw new HttpError(404, `対応していないルートです: ${httpMethod} ${resource}`);
@@ -68,6 +69,12 @@ async function getUser(userId: string) {
 }
 
 async function createUser(event: APIGatewayProxyEvent) {
+  // Usersテーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで最初の1人を作成できる。
+  // それ以外は管理者(manageUsers権限)のみが新規ユーザーを作成できる。
+  if (!(await isTableEmpty(USERS_TABLE_NAME))) {
+    await requirePermission(event, "manageUsers", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  }
+
   const input = parseJsonBody<User>(event);
   // userIdはCognitoの発行するsubと一致させる想定のため、作成時は呼び出し側から明示的に指定する。
   for (const field of ["userId", "displayName", "furigana", "email", "roleId", "memberCategoryId"] as const) {
@@ -97,6 +104,14 @@ async function updateUser(userId: string, event: APIGatewayProxyEvent) {
   const current = await fetchUser(userId);
   if (!current) throw new HttpError(404, "ユーザーが見つかりません");
 
+  // 自分自身の通知ON/OFF切り替え（設計書5.1.2）だけは、管理者権限が無くても本人が行える。
+  // それ以外（他人の更新、自分のロール/カテゴリ変更等）はmanageUsers権限が必要。
+  const isSelf = getCurrentUserId(event) === userId;
+  const isSelfNotificationToggleOnly = isSelf && Object.keys(input).every((key) => key === "notificationStatus");
+  if (!isSelfNotificationToggleOnly) {
+    await requirePermission(event, "manageUsers", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  }
+
   if (input.roleId && input.roleId !== current.roleId) {
     await assertNotRemovingLastAdmin(current, input.roleId);
   }
@@ -111,7 +126,9 @@ async function updateUser(userId: string, event: APIGatewayProxyEvent) {
   return jsonResponse(200, updated);
 }
 
-async function deleteUser(userId: string) {
+async function deleteUser(userId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageUsers", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+
   const current = await fetchUser(userId);
   if (!current) throw new HttpError(404, "ユーザーが見つかりません");
 
@@ -142,6 +159,11 @@ async function getRole(roleId: string) {
 }
 
 async function createRole(event: APIGatewayProxyEvent) {
+  // Rolesテーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで最初のロールを作成できる。
+  if (!(await isTableEmpty(ROLES_TABLE_NAME))) {
+    await requirePermission(event, "manageRoles", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  }
+
   const input = parseJsonBody<Omit<Role, "roleId"> & { roleId?: string }>(event);
   if (!input.name) throw new HttpError(400, "name は必須です");
   if (!input.permissions) throw new HttpError(400, "permissions は必須です");
@@ -156,6 +178,8 @@ async function createRole(event: APIGatewayProxyEvent) {
 }
 
 async function updateRole(roleId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageRoles", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+
   const input = parseJsonBody<Partial<Role>>(event);
   const current = await fetchRole(roleId);
   if (!current) throw new HttpError(404, "ロールが見つかりません");
@@ -177,7 +201,9 @@ async function updateRole(roleId: string, event: APIGatewayProxyEvent) {
   return jsonResponse(200, updated);
 }
 
-async function deleteRole(roleId: string) {
+async function deleteRole(roleId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageRoles", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+
   const current = await fetchRole(roleId);
   if (!current) throw new HttpError(404, "ロールが見つかりません");
 
@@ -218,6 +244,11 @@ async function getMemberCategory(categoryId: string) {
 }
 
 async function createMemberCategory(event: APIGatewayProxyEvent) {
+  // MemberCategoriesテーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで作成できる。
+  if (!(await isTableEmpty(MEMBER_CATEGORIES_TABLE_NAME))) {
+    await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  }
+
   const input = parseJsonBody<Omit<MemberCategory, "categoryId"> & { categoryId?: string }>(event);
   if (!input.name) throw new HttpError(400, "name は必須です");
 
@@ -231,6 +262,8 @@ async function createMemberCategory(event: APIGatewayProxyEvent) {
 }
 
 async function updateMemberCategory(categoryId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+
   const input = parseJsonBody<Partial<MemberCategory>>(event);
   const current = await fetchMemberCategory(categoryId);
   if (!current) throw new HttpError(404, "メンバーカテゴリが見つかりません");
@@ -240,7 +273,9 @@ async function updateMemberCategory(categoryId: string, event: APIGatewayProxyEv
   return jsonResponse(200, updated);
 }
 
-async function deleteMemberCategory(categoryId: string) {
+async function deleteMemberCategory(categoryId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+
   const current = await fetchMemberCategory(categoryId);
   if (!current) throw new HttpError(404, "メンバーカテゴリが見つかりません");
 
@@ -315,4 +350,10 @@ async function countUsersWithManageUsersRole(excludeRoleId?: string, excludeUser
 
 function randomId(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
+}
+
+/** 組織初期セットアップ前かどうかの判定に使う（テーブルが完全に空か）。 */
+async function isTableEmpty(tableName: string): Promise<boolean> {
+  const result = await docClient.send(new ScanCommand({ TableName: tableName, Limit: 1 }));
+  return (result.Items ?? []).length === 0;
 }
