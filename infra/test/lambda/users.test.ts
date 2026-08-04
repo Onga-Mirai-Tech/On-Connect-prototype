@@ -265,6 +265,51 @@ describe("Roles CRUD", () => {
     expect(typeof body.roleId).toBe("string");
   });
 
+  test("PUT /roles/{roleId} で唯一の管理者ロールからmanageUsersを外すと409", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
+    // adminRoleを除外すると管理者ロールが無い(=他に管理者がいない)状態
+    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole, memberRole] });
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/roles/{roleId}",
+        httpMethod: "PUT",
+        pathParameters: { roleId: "role-admin" },
+        body: JSON.stringify({ permissions: { ...adminRole.permissions, manageUsers: false } }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(409);
+  });
+
+  test("PUT /roles/{roleId} は他に管理者ロールがあればmanageUsersを外せる", async () => {
+    const secondAdminRole: Role = { ...adminRole, roleId: "role-admin-2" };
+    const secondAdminUser: User = {
+      userId: "u9",
+      displayName: "副管理者",
+      furigana: "ふくかんりしゃ",
+      email: "vice@example.com",
+      roleId: "role-admin-2",
+      memberCategoryId: "cat-1",
+      notificationStatus: "ON",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
+    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole, secondAdminRole, memberRole] });
+    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [secondAdminUser] });
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/roles/{roleId}",
+        httpMethod: "PUT",
+        pathParameters: { roleId: "role-admin" },
+        body: JSON.stringify({ permissions: { ...adminRole.permissions, manageUsers: false } }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+  });
+
   test("DELETE /roles/{roleId} は割り当て中のユーザーがいる場合409", async () => {
     ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
     ddbMock

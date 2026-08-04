@@ -162,8 +162,9 @@ async function updateRole(roleId: string, event: APIGatewayProxyEvent) {
 
   // manageUsers権限を剥奪しようとしている場合、それが最後の管理者ロールでないか確認する。
   if (input.permissions && current.permissions.manageUsers && !input.permissions.manageUsers) {
-    const adminCount = await countUsersWithManageUsersRole(roleId);
-    if (adminCount > 0) {
+    // このロール以外でmanageUsers権限を持つユーザー数。0人なら他に管理者がいないため拒否する。
+    const otherAdminCount = await countUsersWithManageUsersRole(roleId);
+    if (otherAdminCount === 0) {
       throw new HttpError(
         409,
         "このロールの管理者権限を外すと管理者が0人になるため変更できません",

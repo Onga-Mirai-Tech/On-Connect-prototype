@@ -24,7 +24,7 @@
 
 - Node.js / npm / AWS CLI / CDK CLI / GitHub CLI（`gh`）はローカルに導入済み
 - AWS SSOプロファイル `dev`（アカウント `978841974977`、`AdministratorAccess`、リージョン `ap-northeast-1`）でログイン可能
-- `cdk bootstrap` 実行済み（CDKToolkitスタックあり）。**まだAWSへの実デプロイ（`cdk deploy`）は行っていない**
+- `cdk bootstrap` 実行済み。**`OnConnect-dev`スタックはデプロイ済み（20.参照）。課金が発生している状態**
 - GitHubリモート`origin`（`Onga-Mirai-Tech/On-Connect-prototype`）に対して`gh auth login --web`でCLI認証済み。
   `git push`が通る状態（credential helperは`gh auth setup-git`で設定）
 - Web: `npm run build --workspace apps/web` 成功
@@ -96,6 +96,23 @@
     - テストは`aws-sdk-client-mock`でDynamoDBDocumentClientをモック化し、
       `infra/test/lambda/{users,bulletin,links}.test.ts`に31件のユニットテストを追加（全件green）。
       `npm run build --workspace infra`・`cdk synth`も成功を確認済み
+20. **`OnConnect-dev`スタックを初回デプロイ、Cognitoテストユーザーで実機疎通確認** — **この時点からAWS課金が発生している**：
+    - `cdk deploy`でCognito・DynamoDB10テーブル・AppSync・S3+CloudFront・API Gateway等一式を初回作成
+      （デプロイ時間約249秒。出力: `RestApiUrl`・`UserPoolId`・`UserPoolClientId`等）
+    - Cognitoにテストユーザー（`on-connect-smoketest@example.com`）を`admin-create-user`で作成し、
+      `initiate-auth`（USER_PASSWORD_AUTH）でIDトークンを取得。curlで全CRUDエンドポイントを実地確認（成功）
+    - **疎通確認中にバグを発見・修正**：`infra/lambda/users/index.ts`の`updateRole`内、
+      「唯一の管理者ロールからmanageUsers権限を剥奪しようとした場合に拒否する」ガードの条件式が反転しており、
+      本来拒否すべきケースで200を返してしまっていた（ユニットテストでは未検出、実機のcurl確認で発覚）。
+      `otherAdminCount === 0`で拒否するよう修正し、再現テストを追加した上で再デプロイ・再検証済み
+    - 「最後の管理者を削除・降格できない」「ロール／メンバーカテゴリを使用中に削除できない」の
+      4パターンすべて実機で409になることを確認済み
+    - 今回は`dev`環境を**残したまま**（`cdk destroy`は未実施）。テストで作成したUsers/Roles/MemberCategories/
+      Cognitoユーザーのデータがそのまま残っている（本文中のBulletinPosts/OrgLinksのテストデータは
+      DELETE APIで削除済み）
+    - **未実装のまま残っている課題**：呼び出し元のロール権限（`manageUsers`等）をチェックする認可ロジックが
+      まだ無く、認証済みユーザーなら誰でもUsers/Roles/MemberCategoriesを操作できてしまう
+      （5.1.3が本来想定する権限チェックとは別物。次のセッションでの検討事項）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -165,9 +182,10 @@
 
 ## 8. 次にやりそうなこと（候補）
 
-- **infra Lambda CRUD（Users/Bulletin/Links）をAWS devにデプロイして実機（API Gateway経由）で疎通確認**
-  （未実施。実施する場合、Cognitoテストユーザー作成と初期Roles/MemberCategoriesデータ投入方針の決定が必要。
-  課金は月$数ドル程度の見込み、詳細は本ファイルの元になった会話を参照）
+- **呼び出し元の権限チェック（認可）の実装**：現状Cognito認証さえ通れば誰でもUsers/Roles/
+  MemberCategoriesを操作できてしまう（20.参照）。`Roles.permissions.manageUsers`等を見て
+  操作を許可するかの判定を`users/index.ts`に追加する必要がある
+- `dev`環境の後片付け方針の決定（残すか`cdk destroy`するか。現状は残したまま、テストデータも残存）
 - リアクション/コメントの永続化（掲示板コメント用のDynamoDBテーブルは未作成）、`notifyOnPost.ts`の実装
 - 予約送信の実スケジューリング（`onMessageStreamChange.ts`/`sendScheduled.ts`）
 - 添付ファイルのS3署名付きURL発行（アップロード／ダウンロード）
