@@ -1,38 +1,21 @@
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  MessageCircle,
-  Users,
-  ClipboardList,
-  CalendarDays,
-  Link2,
-  Settings,
-  ShieldCheck,
-  Bell,
-  BellOff,
-} from "lucide-react";
-import { mockCurrentUserIsAdmin, mockMembers, mockCurrentUserId } from "@on-connect/shared";
+import { MessageCircle, ClipboardList, CalendarDays, Menu, Bell, BellOff } from "lucide-react";
+import { mockMembers, mockCurrentUserId } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useNotificationStatus } from "../context/NotificationStatusContext";
 
 const currentMember = mockMembers.find((m) => m.userId === mockCurrentUserId);
 
-const baseNavItems = [
+const navItems = [
   { to: "/chat", label: "チャット", icon: MessageCircle },
-  { to: "/members", label: "メンバー", icon: Users },
   { to: "/bulletin", label: "掲示板", icon: ClipboardList },
   { to: "/calendar", label: "カレンダー", icon: CalendarDays },
-  { to: "/links", label: "リンク集", icon: Link2 },
-  { to: "/settings", label: "設定", icon: Settings },
+  { to: "/menu", label: "メニュー", icon: Menu },
 ];
 
-const adminNavItem = { to: "/admin", label: "管理者", icon: ShieldCheck };
-
-// 管理者タブは管理者権限を持つアカウントにのみ表示する。
-// TODO: 認証実装後はCognitoログインユーザーのRoles権限（manageUsers）を参照する（現状はダミーデータ判定）。
-const navItems = mockCurrentUserIsAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
-
 /**
- * ホーム画面（7章 2番）：チャット／メンバー／掲示板／カレンダー／リンク集のタブ構成。
+ * ホーム画面（Phase 4）：チャット／掲示板／カレンダー／メニューの4タブ構成。
+ * メンバー一覧・シフト管理・リンク集・個人設定・管理者設定はメニュー画面（MenuPage）から遷移する。
  * 下部タブバーは position: fixed でスクロールに追従させ、常に画面内に表示する。
  */
 export function HomeLayout() {

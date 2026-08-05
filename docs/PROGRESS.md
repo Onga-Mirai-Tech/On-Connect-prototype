@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 3追加要望対応済み）
+# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 4完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -21,17 +21,18 @@
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
 - **Phase 2（カレンダー独立DB化＋カテゴリー管理）**：完了・ローカルテスト確認済み
 - **Phase 3（休日・当番・シフトの統合管理）**：完了・ローカルテスト確認済み
-- **Phase 3 追加要望（曜日/祝日・メモ欄・当番人数集計・月間サマリー）**：本セッションで対応完了。
-  詳細は下記9章参照
+- **Phase 3 追加要望（曜日/祝日・メモ欄・当番人数集計・月間サマリー）**：完了・ブラウザ確認済み（9章参照）
+- **Phase 4（メニュー画面・ナビゲーション再編）**：完了・web/mobile双方でブラウザ/型チェック確認済み
+  （詳細は下記3章26.参照）
 
 ### 未着手のフェーズ（計画ファイル参照）
-- Phase 4：メニュー画面・ナビゲーション再編
 - Phase 5：チャットのメンション機能
 - Phase 6：カレンダーの個別予定`.ics`エクスポート＋リマインド
 
 ### 現在のコミット状況
-Phase1〜Phase3（休日・当番・シフトの統合管理まで）は**コミット＆プッシュ済み**（`git log`で確認すること）。
-**Phase 3追加要望（9章・3章25.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
+Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）は
+**コミット済み・未push**（`git log`で確認すること。コミットハッシュ`410f5ad`まで）。
+**Phase 4（3章26.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
 次回セッション開始時は`git status`で確認し、必要ならユーザーに確認の上コミットすること。
 
 ### AWSデプロイの状況
@@ -151,6 +152,22 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）は**コミ
     （`ShiftManagementPage.tsx`/`Screen.tsx`内でstatuses配列から都度算出）。
     テスト：`shifts.test.ts`にDailyNoteのケース6件追加、`on-connect-stack.test.ts`のテーブル数を15に更新。
     プロジェクト全体で82件、全green。ブラウザで実データ表示・メモ編集パネルの開閉を目視確認済み
+26. **【Phase 4】メニュー画面・ナビゲーション再編**：
+    - Web：新規`MenuPage.tsx`（メンバー・シフト管理・リンク集・個人設定への導線＋`manageUsers`権限保持者
+      のみ管理者設定リンクを表示）。`HomeLayout.tsx`の下部タブをチャット／掲示板／カレンダー／メニューの
+      4つに削減し、`mockCurrentUserIsAdmin`参照とタブ出し分けロジックをMenuPageに移設。
+      `router.tsx`に`/menu`ルート追加（`members`/`shift-management`/`links`/`settings`/`admin`は
+      既存パスのまま、遷移元がタブからメニュー画面に変わるだけ）
+    - Mobile：新規`MenuScreen.tsx`＋`MenuStackNavigator`新設（`Members`/`ShiftManagement`/`Links`/`Settings`
+      をこの配下に移動。Phase 3で画面のみ作成済みだった`ShiftManagementScreen`をここで初めてナビゲーションに
+      組み込んだ）。`HomeTabParamList`を`ChatTab`/`BulletinTab`/`Calendar`/`MenuTab`の4タブに削減。
+      管理者機能はブラウザ版限定という既存方針を維持しモバイルには追加しない
+    - `MembersScreen.tsx`がタブ直下から`MenuStack`配下（1階層深く）に移動したことに伴い、他タブへの遷移
+      （チャット開始・音声通話デモ）を`navigation.getParent()`一段だけでなく二段
+      （`MenuStack→HomeTab→RootStack`）で辿るよう navigation 呼び出しを修正
+    - テスト：Lambda/CDK変更無し。`npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）で
+      型エラー無しを確認。ブラウザで4タブ構成・メニュー画面からの遷移・管理者/非管理者での表示切り替え
+      （`mockCurrentUserId`を一時的に`user-01`に切り替えて確認、確認後`user-03`に戻し済み）を目視確認済み
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -218,18 +235,19 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）は**コミ
 | 通知自動リセット（休日連動） | `infra/lambda/users/dailyNotificationReset.ts` |
 | Lambda単体テスト（aws-sdk-client-mock使用、82件） | `infra/test/lambda/*.test.ts` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
-| Web: 共通レイアウト・ヘッダー・下部タブ | `apps/web/src/pages/HomeLayout.tsx` |
+| Web: 共通レイアウト・ヘッダー・下部タブ（4タブ：チャット/掲示板/カレンダー/メニュー） | `apps/web/src/pages/HomeLayout.tsx` |
+| Web: メニュー画面（メンバー/シフト管理/リンク集/個人設定/管理者設定への導線） | `apps/web/src/pages/MenuPage.tsx` |
 | Web: 管理者設定（ユーザー権限編集・各種カテゴリー管理） | `apps/web/src/pages/AdminPage.tsx` |
 | Web: カレンダー一覧/詳細/編集 | `apps/web/src/pages/Calendar{Page,DetailPage,EventEditPage}.tsx` |
 | Web: シフト管理（月間グリッド） | `apps/web/src/pages/ShiftManagementPage.tsx` |
-| Mobile: ナビゲーション定義 | `apps/mobile/src/navigation/AppNavigator.tsx` |
+| Mobile: ナビゲーション定義（4タブ＋MenuStackNavigator） | `apps/mobile/src/navigation/AppNavigator.tsx` |
+| Mobile: メニュー画面（メンバー/シフト管理/リンク集/個人設定への導線） | `apps/mobile/src/screens/MenuScreen.tsx` |
 | Mobile: カレンダー一覧/詳細/編集 | `apps/mobile/src/screens/Calendar{Screen,DetailScreen,EventEditScreen}.tsx` |
-| Mobile: シフト管理（月間グリッド、AppNavigator未組み込み） | `apps/mobile/src/screens/ShiftManagementScreen.tsx` |
+| Mobile: シフト管理（月間グリッド、MenuStackNavigator配下） | `apps/mobile/src/screens/ShiftManagementScreen.tsx` |
 | ブランドアイコン生成スクリプト／画像 | `scripts/generate-brand-icon.py` / `assets/brand/*.png` |
 
 ## 8. 次にやりそうなこと（候補、優先度順ではない）
 
-- Phase 4：メニュー画面・ナビゲーション再編（計画ファイル参照）
 - Phase 5：チャットのメンション機能（計画ファイル参照）
 - Phase 6：カレンダーの`.ics`エクスポート＋リマインド（計画ファイル参照）
 - リアクション/コメントの永続化、`notifyOnPost.ts`の実装

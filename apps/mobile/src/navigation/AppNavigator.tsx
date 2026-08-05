@@ -19,6 +19,8 @@ import { CalendarEventEditScreen } from "../screens/CalendarEventEditScreen";
 import { CalendarDetailScreen } from "../screens/CalendarDetailScreen";
 import { LinksScreen } from "../screens/LinksScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
+import { ShiftManagementScreen } from "../screens/ShiftManagementScreen";
+import { MenuScreen } from "../screens/MenuScreen";
 import { HeaderStatus } from "./HeaderStatus";
 import { colors } from "../theme/colors";
 
@@ -42,13 +44,20 @@ export type CalendarStackParamList = {
 };
 
 // 管理者機能はブラウザ版（apps/web）のみで提供し、モバイル版にはタブを設けない。
-export type HomeTabParamList = {
-  ChatTab: NavigatorScreenParams<ChatStackParamList> | undefined;
+// メンバー一覧・シフト管理・リンク集・個人設定は下部タブから溢れるため、メニュータブ配下にまとめる（Phase 4）。
+export type MenuStackParamList = {
+  MenuHome: undefined;
   Members: undefined;
-  BulletinTab: NavigatorScreenParams<BulletinStackParamList> | undefined;
-  Calendar: NavigatorScreenParams<CalendarStackParamList> | undefined;
+  ShiftManagement: undefined;
   Links: undefined;
   Settings: undefined;
+};
+
+export type HomeTabParamList = {
+  ChatTab: NavigatorScreenParams<ChatStackParamList> | undefined;
+  BulletinTab: NavigatorScreenParams<BulletinStackParamList> | undefined;
+  Calendar: NavigatorScreenParams<CalendarStackParamList> | undefined;
+  MenuTab: NavigatorScreenParams<MenuStackParamList> | undefined;
 };
 
 export type RootStackParamList = {
@@ -61,11 +70,9 @@ type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
 const tabIcons: Record<keyof HomeTabParamList, IoniconName> = {
   ChatTab: "chatbubbles-outline",
-  Members: "people-outline",
   BulletinTab: "clipboard-outline",
   Calendar: "calendar-outline",
-  Links: "link-outline",
-  Settings: "settings-outline",
+  MenuTab: "menu-outline",
 };
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -73,6 +80,7 @@ const HomeTab = createBottomTabNavigator<HomeTabParamList>();
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 const BulletinStack = createNativeStackNavigator<BulletinStackParamList>();
 const CalendarStack = createNativeStackNavigator<CalendarStackParamList>();
+const MenuStack = createNativeStackNavigator<MenuStackParamList>();
 
 function ChatStackNavigator() {
   return (
@@ -129,7 +137,24 @@ function CalendarStackNavigator() {
   );
 }
 
-/** ホーム画面（7章 2番）：チャット／メンバー／掲示板／カレンダー／リンク集のタブ構成 + 設定 */
+function MenuStackNavigator() {
+  return (
+    <MenuStack.Navigator>
+      <MenuStack.Screen
+        name="MenuHome"
+        component={MenuScreen}
+        options={{ title: "メニュー", headerLeft: () => <HeaderStatus /> }}
+      />
+      <MenuStack.Screen name="Members" component={MembersScreen} options={{ title: "メンバー" }} />
+      <MenuStack.Screen name="ShiftManagement" component={ShiftManagementScreen} options={{ title: "シフト管理" }} />
+      <MenuStack.Screen name="Links" component={LinksScreen} options={{ title: "リンク集" }} />
+      <MenuStack.Screen name="Settings" component={SettingsScreen} options={{ title: "個人設定" }} />
+    </MenuStack.Navigator>
+  );
+}
+
+/** ホーム画面（Phase 4）：チャット／掲示板／カレンダー／メニューの4タブ構成。
+ * メンバー一覧・シフト管理・リンク集・個人設定はメニュータブ配下にまとめる。 */
 function HomeTabs() {
   return (
     <HomeTab.Navigator
@@ -142,11 +167,9 @@ function HomeTabs() {
       })}
     >
       <HomeTab.Screen name="ChatTab" component={ChatStackNavigator} options={{ title: "チャット", headerShown: false }} />
-      <HomeTab.Screen name="Members" component={MembersScreen} options={{ title: "メンバー" }} />
       <HomeTab.Screen name="BulletinTab" component={BulletinStackNavigator} options={{ title: "掲示板", headerShown: false }} />
       <HomeTab.Screen name="Calendar" component={CalendarStackNavigator} options={{ title: "カレンダー", headerShown: false }} />
-      <HomeTab.Screen name="Links" component={LinksScreen} options={{ title: "リンク集" }} />
-      <HomeTab.Screen name="Settings" component={SettingsScreen} options={{ title: "設定" }} />
+      <HomeTab.Screen name="MenuTab" component={MenuStackNavigator} options={{ title: "メニュー", headerShown: false }} />
     </HomeTab.Navigator>
   );
 }

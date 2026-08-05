@@ -17,6 +17,7 @@ import { LinksPage } from "./pages/LinksPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { ShiftManagementPage } from "./pages/ShiftManagementPage";
+import { MenuPage } from "./pages/MenuPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       { path: "links", element: <LinksPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "admin", element: <AdminPage /> },
+      { path: "menu", element: <MenuPage /> },
     ],
   },
 ]);

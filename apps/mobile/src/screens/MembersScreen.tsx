@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { View, Text, TextInput, SectionList, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { NativeStackScreenProps, NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import {
   mockMembers,
   mockMemberCategories,
@@ -11,13 +11,13 @@ import {
   mockCurrentUserId,
   memberMatchesQuery,
 } from "@on-connect/shared";
-import type { HomeTabParamList, RootStackParamList } from "../navigation/AppNavigator";
+import type { MenuStackParamList, HomeTabParamList, RootStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 
-type Props = BottomTabScreenProps<HomeTabParamList, "Members">;
+type Props = NativeStackScreenProps<MenuStackParamList, "Members">;
 
 /**
- * メンバー一覧画面（下部タブ）
+ * メンバー一覧画面（メニュータブ配下、Phase 4でメニュー画面から遷移する形に変更）
  * 各メンバーの通知ON/OFF状況を確認でき、その場から個別チャット・音声通話を開始できる。
  * 氏名・ふりがな（ひらがな）検索とロール別グループ表示に対応する。
  * TODO: GET /users からメンバー一覧を取得する（現状はダミーデータ表示）。
@@ -32,7 +32,8 @@ export function MembersScreen({ navigation }: Props) {
     const existingRoom = mockChatRooms.find(
       (r) => !r.isGroup && r.memberUserIds.includes(mockCurrentUserId) && r.memberUserIds.includes(memberId),
     );
-    navigation.navigate("ChatTab", {
+    const tabNavigation = navigation.getParent<BottomTabNavigationProp<HomeTabParamList>>();
+    tabNavigation?.navigate("ChatTab", {
       screen: "ChatRoom",
       params: { roomId: existingRoom?.roomId ?? `dm-${memberId}` },
     });
@@ -40,8 +41,9 @@ export function MembersScreen({ navigation }: Props) {
 
   const handleCall = (memberName: string) => {
     // TODO: POST /calls を呼び出しChime SDK Meetingを開始する（現状はデモ用の着信画面へ遷移）
-    const parent = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
-    parent?.navigate("IncomingCall", { callerName: memberName });
+    const tabNavigation = navigation.getParent<BottomTabNavigationProp<HomeTabParamList>>();
+    const rootNavigation = tabNavigation?.getParent<NativeStackNavigationProp<RootStackParamList>>();
+    rootNavigation?.navigate("IncomingCall", { callerName: memberName });
   };
 
   const filteredMembers = mockMembers.filter((m) => memberMatchesQuery(m, query));
