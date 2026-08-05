@@ -383,12 +383,14 @@ Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**�
   （sendMessage/markMessageRead/listMessagesForRoom/Subscription）に、それ以外のCRUD
   （users/bulletin/calendar/links/shifts）はREST APIクライアント（CognitoのIDトークンをBearerで送る）
   に接続する。影響範囲が非常に広いため、着手時は「8a: 認証基盤」「8b: REST 1リソースだけ疎通確認」
-  「8c: 残りのリソースへ展開」「8d: チャットのAppSync接続」のようにさらに細分化することを推奨。
-  **設計判断は合意済み**（メールアドレス不要・ユーザー名（職員番号方式）＋管理者発行の仮パスワード
+  「8c: 残りのリソースへ展開」「8d: チャットのAppSync接続」の4ステップに細分化して進める。
+  **設計判断は全て合意済み**（メールアドレス不要・ユーザー名（職員番号方式）＋管理者発行の仮パスワード
   （システム自動生成・7日間有効・紙で手渡し）でログイン、パスワード再設定も管理者対応のみ、
   ログイン完了状況はAdminPageのメンバー一覧に表示、既存ダミーメンバーは少人数で試してから本番
-  アカウント化を展開。`infra/lib/constructs/auth-construct.ts`のCognito設定は変更済み。
-  詳細は`/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`の
+  アカウント化を展開、認証・API接続にはAWS Amplifyを採用、8bで最初に接続するのはメンバー一覧、
+  実デプロイの承認は8a〜8d一通り完了後に改めて確認）。
+  `infra/lib/constructs/auth-construct.ts`のCognito設定は変更済み。詳細は
+  `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`の
   「Phase 8: 設計上の決定事項」参照。コード実装はまだ8a=認証基盤から未着手）
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
   掲示板コメント用の新規DynamoDBテーブル・CRUD Lambdaを追加し、ローカルstateのみの
