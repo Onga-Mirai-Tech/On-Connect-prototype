@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import type { DutyType, LeaveReason, LeaveType, MemberDailyStatus, ShiftType } from "@on-connect/shared";
+import type { DailyNote, DutyType, LeaveReason, LeaveType, MemberDailyStatus, ShiftType } from "@on-connect/shared";
 import { requirePermission } from "../common/authz";
 import { docClient } from "../common/dynamo";
 import {
@@ -16,6 +16,7 @@ import {
 const DUTY_TYPES_TABLE_NAME = process.env.DUTY_TYPES_TABLE_NAME!;
 const SHIFT_TYPES_TABLE_NAME = process.env.SHIFT_TYPES_TABLE_NAME!;
 const MEMBER_DAILY_STATUS_TABLE_NAME = process.env.MEMBER_DAILY_STATUS_TABLE_NAME!;
+const DAILY_NOTES_TABLE_NAME = process.env.DAILY_NOTES_TABLE_NAME!;
 const USERS_TABLE_NAME = process.env.USERS_TABLE_NAME!;
 
 /**
@@ -53,6 +54,12 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       if (httpMethod === "GET") return getStatus(date, userId);
       if (httpMethod === "PUT") return upsertStatus(date, userId, event);
       if (httpMethod === "DELETE") return deleteStatus(date, userId, event);
+    }
+    if (resource === "/daily-notes/{date}") {
+      const date = requireParam(event, "date");
+      if (httpMethod === "GET") return getDailyNote(date);
+      if (httpMethod === "PUT") return upsertDailyNote(date, event);
+      if (httpMethod === "DELETE") return deleteDailyNote(date, event);
     }
 
     throw new HttpError(404, `対応していないルートです: ${httpMethod} ${resource}`);
@@ -129,6 +136,44 @@ function resolveField<T>(current: T | undefined, incoming: T | null | undefined)
   if (incoming === undefined) return current;
   if (incoming === null) return undefined;
   return incoming;
+}
+
+// ---------------------------------------------------------------------------
+// DailyNote（日付単位、メンバーに紐づかない自由メモ）
+// ---------------------------------------------------------------------------
+
+async function getDailyNote(date: string) {
+  const note = await fetchDailyNote(date);
+  // レコードが無い(=その日はメモ無し)ことは正常な状態であり、404にはしない。
+  return jsonResponse(200, note ?? { date, note: "" });
+}
+
+async function upsertDailyNote(date: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageShifts", USERS_TABLE_NAME);
+
+  const input = parseJsonBody<{ note: string }>(event);
+  if (typeof input.note !== "string") throw new HttpError(400, "note は必須です");
+
+  const updated: DailyNote = {
+    date,
+    note: input.note,
+    updatedAt: new Date().toISOString(),
+    updatedBy: getCurrentUserId(event),
+  };
+
+  await docClient.send(new PutCommand({ TableName: DAILY_NOTES_TABLE_NAME, Item: updated }));
+  return jsonResponse(200, updated);
+}
+
+async function deleteDailyNote(date: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageShifts", USERS_TABLE_NAME);
+  await docClient.send(new DeleteCommand({ TableName: DAILY_NOTES_TABLE_NAME, Key: { date } }));
+  return jsonResponse(204, {});
+}
+
+async function fetchDailyNote(date: string): Promise<DailyNote | undefined> {
+  const result = await docClient.send(new GetCommand({ TableName: DAILY_NOTES_TABLE_NAME, Key: { date } }));
+  return result.Item as DailyNote | undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 process.env.DUTY_TYPES_TABLE_NAME = "test-DutyTypes";
 process.env.SHIFT_TYPES_TABLE_NAME = "test-ShiftTypes";
 process.env.MEMBER_DAILY_STATUS_TABLE_NAME = "test-MemberDailyStatus";
+process.env.DAILY_NOTES_TABLE_NAME = "test-DailyNotes";
 process.env.USERS_TABLE_NAME = "test-Users";
 
 import { mockClient } from "aws-sdk-client-mock";
@@ -13,7 +14,7 @@ import {
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import type { DutyType, MemberDailyStatus, RolePermissions, ShiftType, User } from "@on-connect/shared";
+import type { DailyNote, DutyType, MemberDailyStatus, RolePermissions, ShiftType, User } from "@on-connect/shared";
 import { handler } from "../../lambda/shifts/crud";
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
@@ -277,6 +278,90 @@ describe("MemberDailyStatus", () => {
         httpMethod: "DELETE",
         pathParameters: { date: "2026-08-05", userId: "u2" },
       }),
+    );
+
+    expect(res.statusCode).toBe(204);
+  });
+});
+
+describe("DailyNote（日付単位、メンバーに紐づかない自由メモ）", () => {
+  test("GET /daily-notes/{date} はレコードが無ければ空メモを返す(404にしない)", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-DailyNotes" }).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/daily-notes/{date}",
+        httpMethod: "GET",
+        pathParameters: { date: "2026-08-05" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ date: "2026-08-05", note: "" });
+  });
+
+  test("GET /daily-notes/{date} は権限チェック無しで既存メモを返す", async () => {
+    const item: DailyNote = { date: "2026-08-05", note: "避難訓練あり", updatedAt: "x", updatedBy: "user-01" };
+    ddbMock.on(GetCommand, { TableName: "test-DailyNotes" }).resolves({ Item: item });
+
+    const res = await invoke(
+      buildEvent({ resource: "/daily-notes/{date}", httpMethod: "GET", pathParameters: { date: "2026-08-05" } }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(item);
+  });
+
+  test("PUT /daily-notes/{date} はmanageShifts権限が無いと403", async () => {
+    mockCallerAsMember();
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/daily-notes/{date}",
+        httpMethod: "PUT",
+        pathParameters: { date: "2026-08-05" },
+        body: JSON.stringify({ note: "テスト" }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  test("PUT /daily-notes/{date} はmanageShifts権限があれば保存できる", async () => {
+    mockCallerAsShiftAdmin();
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/daily-notes/{date}",
+        httpMethod: "PUT",
+        pathParameters: { date: "2026-08-05" },
+        body: JSON.stringify({ note: "避難訓練あり" }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as DailyNote;
+    expect(body.note).toBe("避難訓練あり");
+    expect(body.updatedBy).toBe("caller-1");
+  });
+
+  test("DELETE /daily-notes/{date} はmanageShifts権限が無いと403", async () => {
+    mockCallerAsMember();
+
+    const res = await invoke(
+      buildEvent({ resource: "/daily-notes/{date}", httpMethod: "DELETE", pathParameters: { date: "2026-08-05" } }),
+    );
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  test("DELETE /daily-notes/{date} はmanageShifts権限があれば削除できる", async () => {
+    mockCallerAsShiftAdmin();
+    ddbMock.on(DeleteCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({ resource: "/daily-notes/{date}", httpMethod: "DELETE", pathParameters: { date: "2026-08-05" } }),
     );
 
     expect(res.statusCode).toBe(204);

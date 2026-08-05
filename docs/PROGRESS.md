@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-05時点）
+# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 3追加要望対応済み）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -20,8 +20,9 @@
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
 - **Phase 2（カレンダー独立DB化＋カテゴリー管理）**：完了・ローカルテスト確認済み
-- **Phase 3（休日・当番・シフトの統合管理）**：完了・ローカルテスト確認済み。
-  ただし**ユーザーから追加の詰め要望あり（下記9章参照、次回セッションの最優先タスク）**
+- **Phase 3（休日・当番・シフトの統合管理）**：完了・ローカルテスト確認済み
+- **Phase 3 追加要望（曜日/祝日・メモ欄・当番人数集計・月間サマリー）**：本セッションで対応完了。
+  詳細は下記9章参照
 
 ### 未着手のフェーズ（計画ファイル参照）
 - Phase 4：メニュー画面・ナビゲーション再編
@@ -29,8 +30,9 @@
 - Phase 6：カレンダーの個別予定`.ics`エクスポート＋リマインド
 
 ### 現在のコミット状況
-このセッションの最後に**コミット＆プッシュ済み**（`git log`で確認すること）。
-Phase1後半〜Phase3までの変更が1つ（または複数）のコミットに含まれている。
+Phase1〜Phase3（休日・当番・シフトの統合管理まで）は**コミット＆プッシュ済み**（`git log`で確認すること）。
+**Phase 3追加要望（9章・3章25.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
+次回セッション開始時は`git status`で確認し、必要ならユーザーに確認の上コミットすること。
 
 ### AWSデプロイの状況
 **Phase 1〜3の変更はAWSにデプロイされていない**（ローカルの`npm test`・`cdk synth`のみで確認）。
@@ -62,7 +64,7 @@ Phase1後半〜Phase3までの変更が1つ（または複数）のコミット�
   `git push`が通る状態（credential helperは`gh auth setup-git`で設定）
 - Web: `npm run build --workspace apps/web` 成功
 - Mobile: `npx tsc --noEmit`（apps/mobile内）成功。シミュレータでの実機確認は未実施
-- `infra`: `cdk synth` と Jestテスト成功（Phase3完了時点で**76件**）
+- `infra`: `cdk synth` と Jestテスト成功（Phase3追加要望対応後の時点で**82件**）
 - **エクセルファイル読み込みの注意**：macOSの`~/.Trash`（ゴミ箱）はTCC制限で`openpyxl`等から直接読めない
   （`Operation not permitted`）。ユーザーにデスクトップ等へ移動してもらう必要がある
 
@@ -140,6 +142,15 @@ Phase1後半〜Phase3までの変更が1つ（または複数）のコミット�
       表示、複数当番の重複表示）を目視確認済み
     - **ルーティングのみ追加、ナビゲーションへの組み込みはPhase 4でまとめて行う**（計画通り）
     - テスト：`shifts.test.ts`・`dailyNotificationReset.test.ts`新設。プロジェクト全体で76件、全green
+25. **【Phase 3 追加要望】シフト管理グリッドに曜日/祝日・メモ欄・当番人数集計・月間サマリーを追加**：
+    9章の要望4件に対応（詳細は9章参照）。`@holiday-jp/holiday_jp`（npm、依存ゼロの祝日データライブラリ）を
+    `packages/shared`に追加し、`holidays.ts`で`weekdayLabelForDate`/`holidayNameForDate`を提供。
+    日付単位（メンバーに紐づかない）の自由メモは新規`DailyNote`型＋`DailyNotesTable`（PK`date`）＋
+    `manageShifts`権限で保護されたCRUD（`GET/PUT/DELETE /daily-notes/{date}`、`shifts/crud.ts`に追加）で実装。
+    当番人数集計・月間サマリーはバックエンドAPI変更なし、フロント側の集計ロジックのみで対応
+    （`ShiftManagementPage.tsx`/`Screen.tsx`内でstatuses配列から都度算出）。
+    テスト：`shifts.test.ts`にDailyNoteのケース6件追加、`on-connect-stack.test.ts`のテーブル数を15に更新。
+    プロジェクト全体で82件、全green。ブラウザで実データ表示・メモ編集パネルの開閉を目視確認済み
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -152,11 +163,11 @@ Phase1後半〜Phase3までの変更が1つ（または複数）のコミット�
 ## 5. 実装状況（本実装 vs スタブ）
 
 ### 本実装済み（実際に動くロジック、ローカルテスト確認済み・AWS未デプロイ）
-- CDKインフラのリソース定義一式（Cognito、DynamoDB **14テーブル**、AppSync、S3+CloudFront、
+- CDKインフラのリソース定義一式（Cognito、DynamoDB **15テーブル**、AppSync、S3+CloudFront、
   EventBridge Scheduler、API Gateway）
 - 通知ステータス毎朝7時自動リセット＋休日連動ロジック（`dailyNotificationReset.ts`、24.参照）
 - Users/Roles/MemberCategories・BulletinPosts/BulletinCategories・CalendarEvents/CalendarCategories・
-  OrgLinks・DutyTypes/ShiftTypes/MemberDailyStatusの全CRUD Lambda（19,22,23,24参照）
+  OrgLinks・DutyTypes/ShiftTypes/MemberDailyStatus/DailyNoteの全CRUD Lambda（19,22,23,24,25参照）
 - 呼び出し元の権限チェック（`manageUsers`/`manageRoles`/`manageMemberCategories`/`manageBulletinCategories`/
   `manageCalendarCategories`/`manageShifts`）。**bulletin/calendar/shiftsのカテゴリー管理系は権限チェック
   済みだが、CalendarEvents本体・BulletinPosts本体には権限チェックが無い**（全メンバーが作成編集削除可、
@@ -202,9 +213,10 @@ Phase1後半〜Phase3までの変更が1つ（または複数）のコミット�
 | Users/Roles/MemberCategories CRUD | `infra/lambda/users/index.ts` |
 | 掲示板CRUD（BulletinCategories含む） | `infra/lambda/bulletin/crud.ts` |
 | カレンダーCRUD（独立DB、CalendarCategories含む） | `infra/lambda/calendar/crud.ts` |
-| 休日・当番・シフトCRUD | `infra/lambda/shifts/crud.ts` |
+| 休日・当番・シフト・日次メモCRUD | `infra/lambda/shifts/crud.ts` |
+| 曜日・祝日ヘルパー（`@holiday-jp/holiday_jp`使用） | `packages/shared/src/holidays.ts` |
 | 通知自動リセット（休日連動） | `infra/lambda/users/dailyNotificationReset.ts` |
-| Lambda単体テスト（aws-sdk-client-mock使用、76件） | `infra/test/lambda/*.test.ts` |
+| Lambda単体テスト（aws-sdk-client-mock使用、82件） | `infra/test/lambda/*.test.ts` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: 管理者設定（ユーザー権限編集・各種カテゴリー管理） | `apps/web/src/pages/AdminPage.tsx` |
@@ -217,7 +229,6 @@ Phase1後半〜Phase3までの変更が1つ（または複数）のコミット�
 
 ## 8. 次にやりそうなこと（候補、優先度順ではない）
 
-- **9章のPhase3追加要望に対応**（次回セッションの最優先、下記参照）
 - Phase 4：メニュー画面・ナビゲーション再編（計画ファイル参照）
 - Phase 5：チャットのメンション機能（計画ファイル参照）
 - Phase 6：カレンダーの`.ics`エクスポート＋リマインド（計画ファイル参照）
@@ -228,22 +239,19 @@ Phase1後半〜Phase3までの変更が1つ（または複数）のコミット�
 - 通知音の仕様確定
 - Amazon Chime SDKの音声通話実装
 
-## 9. Phase 3 追加要望（次回セッションの最優先タスク）
+## 9. Phase 3 追加要望（対応完了、25.参照）
 
-Phase 3は一度完了したが、ユーザーから以下の追加要望があり、**コンテキストウィンドウリセット後に着手する**：
+Phase 3完了後にユーザーから追加要望があり、本セッションで全4件に対応した：
 
-1. **日付だけでなく曜日も併記**。可能であれば祝日も表示（`ShiftManagementPage`/`Screen`のグリッドヘッダー）。
-   祝日データは外部ライブラリ（`@holiday-jp/holiday_jp`等）かハードコードの祝日リストが必要になる見込み。
-   ライブラリ追加の可否・データソースをどうするか要検討
+1. **日付だけでなく曜日も併記。可能であれば祝日も表示**（`ShiftManagementPage`/`Screen`のグリッドヘッダー）。
+   → `@holiday-jp/holiday_jp`（npm、依存ゼロ）を追加し対応。ライブラリ追加はユーザーに確認済み
 2. **日付の下に自由メモ欄を設ける。権限者のみ追記可能**。
-   現在の`MemberDailyStatus`は「メンバー×日付」単位だが、このメモは「日付単位」（メンバーに紐づかない）の
-   ものと思われる（要確認）。新しいテーブル（例：`DailyNote { date, note, updatedAt, updatedBy }`）が必要か、
-   `MemberDailyStatus`とは別の設計が要る
-3. **日ごとに当番の人数を算出**（Excelファイルと同じような形式）。グリッドの各日付列の下（または別行）に
-   「当番タイプ別の人数」を集計表示する機能。当番タイプごとに人数をカウントするロジックをフロント側
-   （またはバックエンドの集計API）に追加する必要がある
-4. **月単位で、メンバーごとに当番回数・シフト回数を表示**。グリッドの右端（または別セクション）に
-   月間サマリー列（メンバーごとの当番合計回数・シフト合計回数）を追加する
+   → 「日付単位（メンバーに紐づかない）」の粒度で実装（ユーザーに確認済み）。新規`DailyNote`型・
+   `DailyNotesTable`（PK`date`）・CRUDエンドポイントを追加
+3. **日ごとに当番の人数を算出**（Excelファイルと同じような形式）。
+   → グリッドに「当番人数」行を追加、当番タイプ別の人数をフロント側で集計表示
+4. **月単位で、メンバーごとに当番回数・シフト回数を表示**。
+   → グリッド右端に当番タイプ別・シフトタイプ別の月間合計列を追加（フロント側集計、API変更なし）
 
-これらは全て**表示・集計ロジックの追加が中心**で、データモデル（1,2番を除く）自体の大きな変更は
-不要と見込まれる。着手前に、2番（メモ欄の粒度）については設計確認が必要。
+いずれもブラウザで実データ表示・編集操作を目視確認済み（`mockCurrentUserId`を一時的に`user-01`
+（管理者）に切り替えて確認、確認後`user-03`に戻し済み）。詳細は3章25.参照。

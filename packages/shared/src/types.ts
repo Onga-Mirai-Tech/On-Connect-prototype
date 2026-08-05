@@ -169,6 +169,17 @@ export interface MemberDailyStatus {
   updatedBy: string;
 }
 
+/**
+ * 日付単位（メンバーには紐づかない）の自由メモ。「今日は避難訓練あり」のような、その日全体に関する
+ * 備考を想定。manageShifts権限を持つ人のみ追記・編集できる。
+ */
+export interface DailyNote {
+  date: string; // YYYY-MM-DD
+  note: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export type CallStatus = "completed" | "missed" | "declined";
 
 export interface CallLog {

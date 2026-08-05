@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Text, Pressable, ScrollView, TextInput, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   mockMembers,
   mockMemberDailyStatuses,
   mockDutyTypes,
   mockShiftTypes,
+  mockDailyNotes,
   mockCurrentUserId,
+  weekdayLabelForDate,
+  holidayNameForDate,
   type MemberDailyStatus,
+  type DailyNote,
   type LeaveType,
   type LeaveReason,
 } from "@on-connect/shared";
@@ -24,14 +28,26 @@ function dateKey(year: number, month: number, day: number): string {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/** 配列内の値ごとの出現回数を数える */
+function countBy(values: string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const v of values) counts[v] = (counts[v] ?? 0) + 1;
+  return counts;
+}
+
+const activeDutyTypes = mockDutyTypes.filter((d) => d.isActive);
+const activeShiftTypes = mockShiftTypes.filter((s) => s.isActive);
+
 const CELL_WIDTH = 64;
+const SUMMARY_WIDTH = 44;
 const NAME_WIDTH = 88;
 
 /**
  * シフト管理画面：休日・当番・シフトを月間グリッド（メンバー×日付）で表示する。
  * 編集はmanageShifts権限を持つ人のみ（本人の分も含め自己申告はできない）。閲覧は全員に開放。
- * TODO: GET /member-daily-status?date=... / PUT /member-daily-status/{date}/{userId} をAPIに接続する
- * （現状はダミーデータのローカルstateのみ）。
+ * ヘッダーに曜日・祝日、日付の下にメモ欄と当番人数の集計、右端にメンバー別の月間当番・シフト回数を表示する。
+ * TODO: GET /member-daily-status?date=... / PUT /member-daily-status/{date}/{userId}、
+ * GET /daily-notes/{date} / PUT /daily-notes/{date} をAPIに接続する（現状はダミーデータのローカルstateのみ）。
  * 注：名前列は固定表示せず、行全体が横スクロールする簡易実装（Web版は名前列を固定表示）。
  */
 export function ShiftManagementScreen() {
@@ -39,17 +55,40 @@ export function ShiftManagementScreen() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [statuses, setStatuses] = useState(mockMemberDailyStatuses);
+  const [notes, setNotes] = useState(mockDailyNotes);
   const [editing, setEditing] = useState<{ userId: string; date: string } | null>(null);
+  const [editingNoteDate, setEditingNoteDate] = useState<string | null>(null);
 
   const currentUser = mockMembers.find((m) => m.userId === mockCurrentUserId);
   const canEdit = currentUser?.permissions.manageShifts ?? false;
 
   const dayCount = daysInMonth(year, month);
   const days = Array.from({ length: dayCount }, (_, i) => i + 1);
+  const monthDates = days.map((d) => dateKey(year, month, d));
 
   const statusFor = (userId: string, date: string) => statuses.find((s) => s.userId === userId && s.date === date);
+  const noteFor = (date: string) => notes.find((n) => n.date === date);
   const shiftName = (id: string | undefined) => mockShiftTypes.find((s) => s.shiftTypeId === id)?.name;
   const dutyName = (id: string) => mockDutyTypes.find((d) => d.dutyTypeId === id)?.name ?? id;
+
+  // 日ごとの当番人数（当番タイプ別）
+  const dutyCountsByDate: Record<string, Record<string, number>> = {};
+  for (const date of monthDates) {
+    const ids = statuses.filter((s) => s.date === date).flatMap((s) => s.dutyTypeIds ?? []);
+    dutyCountsByDate[date] = countBy(ids);
+  }
+
+  // メンバーごとの月間当番回数・シフト回数（午前午後は別カウント）
+  const dutyCountsByMember: Record<string, Record<string, number>> = {};
+  const shiftCountsByMember: Record<string, Record<string, number>> = {};
+  for (const m of mockMembers) {
+    const memberStatuses = statuses.filter((s) => s.userId === m.userId && monthDates.includes(s.date));
+    dutyCountsByMember[m.userId] = countBy(memberStatuses.flatMap((s) => s.dutyTypeIds ?? []));
+    const shiftIds = memberStatuses.flatMap((s) =>
+      [s.amShiftTypeId, s.pmShiftTypeId].filter((id): id is string => !!id),
+    );
+    shiftCountsByMember[m.userId] = countBy(shiftIds);
+  }
 
   const goPrevMonth = () => {
     if (month === 1) {
@@ -93,6 +132,25 @@ export function ShiftManagementScreen() {
     setEditing(null);
   };
 
+  const handleSaveNote = (date: string, note: string) => {
+    // TODO: PUT /daily-notes/{date} を呼び出す（現状はローカルstateのみ）
+    setNotes((prev) => {
+      const idx = prev.findIndex((n) => n.date === date);
+      const updated: DailyNote = { date, note, updatedAt: new Date().toISOString(), updatedBy: mockCurrentUserId };
+      const next = [...prev];
+      if (idx >= 0) next[idx] = updated;
+      else next.push(updated);
+      return next;
+    });
+    setEditingNoteDate(null);
+  };
+
+  const handleClearNote = (date: string) => {
+    // TODO: DELETE /daily-notes/{date} を呼び出す
+    setNotes((prev) => prev.filter((n) => n.date !== date));
+    setEditingNoteDate(null);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -116,12 +174,90 @@ export function ShiftManagementScreen() {
         <View>
           <View style={styles.row}>
             <View style={[styles.cell, { width: NAME_WIDTH }]} />
-            {days.map((d) => (
-              <View key={d} style={[styles.cell, { width: CELL_WIDTH }]}>
-                <Text style={styles.headerText}>{d}</Text>
+            {days.map((d) => {
+              const date = dateKey(year, month, d);
+              const weekday = weekdayLabelForDate(date);
+              const holiday = holidayNameForDate(date);
+              const isRedDay = weekday === "日" || !!holiday;
+              const isSaturday = weekday === "土";
+              return (
+                <View
+                  key={d}
+                  style={[
+                    styles.cell,
+                    { width: CELL_WIDTH },
+                    (isRedDay || isSaturday) && { backgroundColor: colors.surface },
+                  ]}
+                >
+                  <Text style={[styles.headerText, isRedDay && { color: colors.danger, fontWeight: "700" }]}>
+                    {d} ({weekday})
+                  </Text>
+                  {holiday && (
+                    <Text style={styles.holidayText} numberOfLines={1}>
+                      {holiday}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+            {activeDutyTypes.map((d) => (
+              <View key={d.dutyTypeId} style={[styles.cell, styles.summaryCell, { width: SUMMARY_WIDTH }]}>
+                <Text style={styles.summaryHeaderLabel}>当番</Text>
+                <Text style={styles.headerText} numberOfLines={1}>
+                  {d.name}
+                </Text>
+              </View>
+            ))}
+            {activeShiftTypes.map((s) => (
+              <View key={s.shiftTypeId} style={[styles.cell, { width: SUMMARY_WIDTH }]}>
+                <Text style={styles.summaryHeaderLabel}>シフト</Text>
+                <Text style={styles.headerText} numberOfLines={1}>
+                  {s.name}
+                </Text>
               </View>
             ))}
           </View>
+
+          <View style={styles.row}>
+            <View style={[styles.cell, { width: NAME_WIDTH }]}>
+              <Text style={styles.nameText}>メモ</Text>
+            </View>
+            {days.map((d) => {
+              const date = dateKey(year, month, d);
+              const note = noteFor(date);
+              return (
+                <Pressable
+                  key={d}
+                  onPress={() => canEdit && setEditingNoteDate(date)}
+                  style={[styles.cell, { width: CELL_WIDTH }]}
+                >
+                  <Text style={styles.noteText} numberOfLines={3}>
+                    {note?.note}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.cell, { width: NAME_WIDTH }]}>
+              <Text style={styles.nameText}>当番人数</Text>
+            </View>
+            {days.map((d) => {
+              const date = dateKey(year, month, d);
+              const counts = Object.entries(dutyCountsByDate[date] ?? {});
+              return (
+                <View key={d} style={[styles.cell, { width: CELL_WIDTH }]}>
+                  {counts.map(([id, count]) => (
+                    <Text key={id} style={styles.dutyText}>
+                      {dutyName(id)}:{count}
+                    </Text>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+
           <ScrollView>
             {mockMembers.map((m) => (
               <View key={m.userId} style={styles.row}>
@@ -157,6 +293,16 @@ export function ShiftManagementScreen() {
                     </Pressable>
                   );
                 })}
+                {activeDutyTypes.map((d) => (
+                  <View key={d.dutyTypeId} style={[styles.cell, styles.summaryCell, { width: SUMMARY_WIDTH }]}>
+                    <Text style={styles.summaryValue}>{dutyCountsByMember[m.userId]?.[d.dutyTypeId] || ""}</Text>
+                  </View>
+                ))}
+                {activeShiftTypes.map((s) => (
+                  <View key={s.shiftTypeId} style={[styles.cell, { width: SUMMARY_WIDTH }]}>
+                    <Text style={styles.summaryValue}>{shiftCountsByMember[m.userId]?.[s.shiftTypeId] || ""}</Text>
+                  </View>
+                ))}
               </View>
             ))}
           </ScrollView>
@@ -173,6 +319,59 @@ export function ShiftManagementScreen() {
           onClose={() => setEditing(null)}
         />
       )}
+
+      {editingNoteDate && (
+        <NoteEditPanel
+          date={editingNoteDate}
+          note={noteFor(editingNoteDate)}
+          onSave={(note) => handleSaveNote(editingNoteDate, note)}
+          onClear={() => handleClearNote(editingNoteDate)}
+          onClose={() => setEditingNoteDate(null)}
+        />
+      )}
+    </View>
+  );
+}
+
+function NoteEditPanel({
+  date,
+  note,
+  onSave,
+  onClear,
+  onClose,
+}: {
+  date: string;
+  note: DailyNote | undefined;
+  onSave: (note: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(note?.note ?? "");
+
+  return (
+    <View style={styles.panel}>
+      <View style={styles.panelHeader}>
+        <Text style={styles.panelTitle}>{date} のメモ</Text>
+        <Pressable onPress={onClose}>
+          <Text>閉じる</Text>
+        </Pressable>
+      </View>
+      <TextInput
+        value={value}
+        onChangeText={setValue}
+        multiline
+        numberOfLines={3}
+        placeholder="この日全体に関する備考（例：避難訓練あり）"
+        style={styles.noteInput}
+      />
+      <View style={styles.panelActions}>
+        <Pressable style={styles.saveButton} onPress={() => onSave(value)}>
+          <Text style={styles.saveButtonText}>保存</Text>
+        </Pressable>
+        <Pressable style={styles.clearButton} onPress={onClear}>
+          <Text>このメモを削除</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -330,11 +529,25 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     justifyContent: "flex-start",
   },
+  summaryCell: { borderLeftWidth: 2 },
   headerText: { fontSize: 11, color: colors.textMuted, textAlign: "center" },
+  holidayText: { fontSize: 8, color: colors.danger, textAlign: "center" },
+  summaryHeaderLabel: { fontSize: 8, color: colors.textMuted, textAlign: "center" },
+  summaryValue: { fontSize: 12, fontWeight: "700", textAlign: "center" },
   nameText: { fontWeight: "700", fontSize: 12 },
   cellText: { fontSize: 10 },
   leaveText: { fontSize: 10, fontWeight: "700", color: colors.danger },
   dutyText: { fontSize: 10, color: colors.brandDark },
+  noteText: { fontSize: 10 },
+  noteInput: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: colors.surface,
+    borderRadius: 8,
+    padding: 8,
+    minHeight: 72,
+    textAlignVertical: "top",
+  },
   panel: { marginTop: 16, borderWidth: 1, borderColor: colors.surface, borderRadius: 14, padding: 16 },
   panelHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   panelTitle: { fontWeight: "700" },

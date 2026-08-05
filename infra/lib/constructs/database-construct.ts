@@ -21,6 +21,7 @@ export class DatabaseConstruct extends Construct {
   public readonly dutyTypesTable: dynamodb.Table;
   public readonly shiftTypesTable: dynamodb.Table;
   public readonly memberDailyStatusTable: dynamodb.Table;
+  public readonly dailyNotesTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, envName: string) {
     super(scope, id);
@@ -124,6 +125,13 @@ export class DatabaseConstruct extends Construct {
       tableName: `on-connect-${envName}-MemberDailyStatus`,
       partitionKey: { name: "date", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "userId", type: dynamodb.AttributeType.STRING },
+    });
+
+    // 日付単位（メンバーに紐づかない）の自由メモ。manageShifts権限を持つ人のみ編集可
+    this.dailyNotesTable = new dynamodb.Table(this, "DailyNotesTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-DailyNotes`,
+      partitionKey: { name: "date", type: dynamodb.AttributeType.STRING },
     });
   }
 }

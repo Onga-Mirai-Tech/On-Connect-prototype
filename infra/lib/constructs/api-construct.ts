@@ -23,6 +23,7 @@ export interface ApiConstructProps {
   dutyTypesTable: dynamodb.Table;
   shiftTypesTable: dynamodb.Table;
   memberDailyStatusTable: dynamodb.Table;
+  dailyNotesTable: dynamodb.Table;
   attachmentsBucket: s3.Bucket;
 }
 
@@ -214,12 +215,14 @@ export class ApiConstruct extends Construct {
         DUTY_TYPES_TABLE_NAME: props.dutyTypesTable.tableName,
         SHIFT_TYPES_TABLE_NAME: props.shiftTypesTable.tableName,
         MEMBER_DAILY_STATUS_TABLE_NAME: props.memberDailyStatusTable.tableName,
+        DAILY_NOTES_TABLE_NAME: props.dailyNotesTable.tableName,
         USERS_TABLE_NAME: props.usersTable.tableName,
       },
     });
     props.dutyTypesTable.grantReadWriteData(shiftsFn);
     props.shiftTypesTable.grantReadWriteData(shiftsFn);
     props.memberDailyStatusTable.grantReadWriteData(shiftsFn);
+    props.dailyNotesTable.grantReadWriteData(shiftsFn);
     props.usersTable.grantReadData(shiftsFn);
 
     const dutyTypesResource = this.restApi.root.addResource("duty-types");
@@ -243,5 +246,11 @@ export class ApiConstruct extends Construct {
     memberDailyStatusItem.addMethod("GET", new apigateway.LambdaIntegration(shiftsFn), authOptions);
     memberDailyStatusItem.addMethod("PUT", new apigateway.LambdaIntegration(shiftsFn), authOptions);
     memberDailyStatusItem.addMethod("DELETE", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+
+    const dailyNotesResource = this.restApi.root.addResource("daily-notes");
+    const dailyNotesItem = dailyNotesResource.addResource("{date}");
+    dailyNotesItem.addMethod("GET", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    dailyNotesItem.addMethod("PUT", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    dailyNotesItem.addMethod("DELETE", new apigateway.LambdaIntegration(shiftsFn), authOptions);
   }
 }

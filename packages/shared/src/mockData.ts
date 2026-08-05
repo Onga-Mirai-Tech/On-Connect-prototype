@@ -13,6 +13,7 @@ import type {
   DutyType,
   ShiftType,
   MemberDailyStatus,
+  DailyNote,
   OrgLink,
   Reaction,
 } from "./types";
@@ -512,6 +513,16 @@ export const mockMemberDailyStatuses: MemberDailyStatus[] = [
     dutyTypeIds: ["duty-1f-mimamori"],
     updatedAt: "2026-07-25T09:00:00+09:00",
     updatedBy: "user-02",
+  },
+];
+
+/** 日付単位（メンバーに紐づかない）の自由メモ。manageShifts権限を持つ人のみ編集可 */
+export const mockDailyNotes: DailyNote[] = [
+  {
+    date: "2026-08-05",
+    note: "10:00〜避難訓練あり。園庭に集合。",
+    updatedAt: "2026-08-01T09:00:00+09:00",
+    updatedBy: "user-01",
   },
 ];
 

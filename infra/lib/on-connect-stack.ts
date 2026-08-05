@@ -59,6 +59,7 @@ export class OnConnectStack extends Stack {
       dutyTypesTable: db.dutyTypesTable,
       shiftTypesTable: db.shiftTypesTable,
       memberDailyStatusTable: db.memberDailyStatusTable,
+      dailyNotesTable: db.dailyNotesTable,
       attachmentsBucket: storage.attachmentsBucket,
     });
 
