@@ -6,3 +6,8 @@ export function tokyoDateString(offsetDays = 0): string {
   const shifted = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(shifted);
 }
+
+/** 任意のISO日時文字列を、Asia/Tokyo基準の YYYY-MM-DD 文字列に変換する */
+export function toTokyoDateString(isoString: string): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(new Date(isoString));
+}

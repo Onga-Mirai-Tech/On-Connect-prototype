@@ -18,6 +18,20 @@ export function jsonResponse(statusCode: number, body: unknown): APIGatewayProxy
   };
 }
 
+/** JSON以外（.ics等）のレスポンスを返す共通ヘルパー */
+export function rawResponse(
+  statusCode: number,
+  contentType: string,
+  body: string,
+  extraHeaders: Record<string, string> = {},
+): APIGatewayProxyResult {
+  return {
+    statusCode,
+    headers: { "Content-Type": contentType, ...extraHeaders },
+    body,
+  };
+}
+
 export function parseJsonBody<T>(event: APIGatewayProxyEvent): T {
   if (!event.body) {
     throw new HttpError(400, "リクエストボディが空です");

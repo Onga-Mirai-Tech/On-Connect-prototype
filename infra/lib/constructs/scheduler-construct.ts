@@ -5,6 +5,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as sns from "aws-cdk-lib/aws-sns";
 import { DynamoEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { StartingPosition } from "aws-cdk-lib/aws-lambda";
 
@@ -13,6 +14,8 @@ export interface SchedulerConstructProps {
   messagesTable: dynamodb.Table;
   usersTable: dynamodb.Table;
   memberDailyStatusTable: dynamodb.Table;
+  calendarEventsTable: dynamodb.Table;
+  pushTopic: sns.Topic;
   chatApiUrl: string;
 }
 
@@ -31,6 +34,7 @@ export class SchedulerConstruct extends Construct {
   public readonly sendScheduledFn: lambdaNode.NodejsFunction;
   public readonly streamProcessorFn: lambdaNode.NodejsFunction;
   public readonly dailyNotificationResetFn: lambdaNode.NodejsFunction;
+  public readonly calendarDailyReminderFn: lambdaNode.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: SchedulerConstructProps) {
     super(scope, id);
@@ -114,6 +118,35 @@ export class SchedulerConstruct extends Construct {
       scheduleExpressionTimezone: "Asia/Tokyo",
       target: {
         arn: this.dailyNotificationResetFn.functionArn,
+        roleArn: schedulerInvocationRole.roleArn,
+      },
+    });
+
+    // カレンダー予定の当日リマインド：毎朝7:00（Asia/Tokyo）に実行。
+    // 今日開催の予定（単日・複数日どちらも対象）を、閲覧権限＋notificationStatus ONのユーザーに通知する（Phase 6）。
+    this.calendarDailyReminderFn = new lambdaNode.NodejsFunction(this, "CalendarDailyReminderFn", {
+      entry: path.join(__dirname, "../../lambda/calendar/dailyReminder.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      environment: {
+        CALENDAR_EVENTS_TABLE_NAME: props.calendarEventsTable.tableName,
+        USERS_TABLE_NAME: props.usersTable.tableName,
+        PUSH_TOPIC_ARN: props.pushTopic.topicArn,
+      },
+    });
+    props.calendarEventsTable.grantReadData(this.calendarDailyReminderFn);
+    props.usersTable.grantReadData(this.calendarDailyReminderFn);
+    props.pushTopic.grantPublish(this.calendarDailyReminderFn);
+    this.calendarDailyReminderFn.grantInvoke(schedulerInvocationRole);
+
+    new scheduler.CfnSchedule(this, "CalendarDailyReminderSchedule", {
+      name: `on-connect-${props.envName}-calendar-daily-reminder`,
+      groupName: this.scheduleGroup.name,
+      flexibleTimeWindow: { mode: "OFF" },
+      scheduleExpression: "cron(0 7 * * ? *)",
+      scheduleExpressionTimezone: "Asia/Tokyo",
+      target: {
+        arn: this.calendarDailyReminderFn.functionArn,
         roleArn: schedulerInvocationRole.roleArn,
       },
     });

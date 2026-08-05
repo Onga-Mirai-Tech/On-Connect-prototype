@@ -154,6 +154,8 @@ export class ApiConstruct extends Construct {
     calendarEventItem.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
     calendarEventItem.addMethod("PUT", new apigateway.LambdaIntegration(calendarFn), authOptions);
     calendarEventItem.addMethod("DELETE", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    const calendarEventIcal = calendarEventItem.addResource("ical");
+    calendarEventIcal.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
 
     const calendarCategoriesResource = this.restApi.root.addResource("calendar-categories");
     calendarCategoriesResource.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);

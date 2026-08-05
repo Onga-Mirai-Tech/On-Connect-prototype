@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Pencil, Trash2 } from "lucide-react";
-import { mockCalendarEvents, mockCalendarCategories, mockMembers, mockCurrentUserId } from "@on-connect/shared";
+import { Pencil, Trash2, CalendarPlus } from "lucide-react";
+import {
+  mockCalendarEvents,
+  mockCalendarCategories,
+  mockMembers,
+  mockCurrentUserId,
+  buildIcsForEvent,
+} from "@on-connect/shared";
 import { colors } from "../theme/colors";
 
 const categoryName = (categoryId: string | undefined) =>
@@ -41,6 +47,16 @@ export function CalendarDetailPage() {
     navigate("/calendar");
   };
 
+  const handleAddToCalendar = () => {
+    const blob = new Blob([buildIcsForEvent(event)], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${event.title}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -63,8 +79,13 @@ export function CalendarDetailPage() {
         作成者：{memberName(event.authorId)}
       </div>
       {event.description && (
-        <div style={{ border: `1px solid ${colors.surface}`, borderRadius: 14, padding: 16 }}>{event.description}</div>
+        <div style={{ border: `1px solid ${colors.surface}`, borderRadius: 14, padding: 16, marginBottom: 12 }}>
+          {event.description}
+        </div>
       )}
+      <button type="button" onClick={handleAddToCalendar} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <CalendarPlus size={16} /> カレンダーに追加（.icsをダウンロード）
+      </button>
     </div>
   );
 }

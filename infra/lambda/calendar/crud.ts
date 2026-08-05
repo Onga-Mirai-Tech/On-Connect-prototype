@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { DeleteCommand, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import type { CalendarCategory, CalendarEvent, User } from "@on-connect/shared";
+// holidays.ts経由で@holiday-jp/holiday_jp（CJS、tree-shake不可）が芋づる式にバンドルされるのを避けるため、
+// バレル(@on-connect/shared)ではなくics.tsを直接importする（このLambdaで唯一の実行時import）
+import { buildIcsForEvent } from "@on-connect/shared/src/ics";
 import { requirePermission } from "../common/authz";
 import { docClient, isTableEmpty } from "../common/dynamo";
 import {
@@ -10,6 +13,7 @@ import {
   handleRequest,
   jsonResponse,
   parseJsonBody,
+  rawResponse,
   requireParam,
 } from "../common/http";
 import { isVisibleToCategory } from "../common/visibility";
@@ -36,6 +40,10 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       if (httpMethod === "GET") return getEvent(eventId, event);
       if (httpMethod === "PUT") return updateEvent(eventId, event);
       if (httpMethod === "DELETE") return deleteEvent(eventId);
+    }
+    if (resource === "/calendar-events/{eventId}/ical") {
+      const eventId = requireParam(event, "eventId");
+      if (httpMethod === "GET") return getEventIcal(eventId, event);
     }
     if (resource === "/calendar-categories") {
       if (httpMethod === "GET") return listCategories();
@@ -73,6 +81,20 @@ async function getEvent(eventId: string, event: APIGatewayProxyEvent) {
     throw new HttpError(403, "この予定を閲覧する権限がありません");
   }
   return jsonResponse(200, calendarEvent);
+}
+
+async function getEventIcal(eventId: string, event: APIGatewayProxyEvent) {
+  const calendarEvent = await fetchEvent(eventId);
+  if (!calendarEvent) throw new HttpError(404, "予定が見つかりません");
+
+  const memberCategoryId = await currentUserMemberCategoryId(event);
+  if (!isVisibleToCategory(calendarEvent.visibleCategoryIds, memberCategoryId)) {
+    throw new HttpError(403, "この予定を閲覧する権限がありません");
+  }
+
+  return rawResponse(200, "text/calendar; charset=utf-8", buildIcsForEvent(calendarEvent), {
+    "Content-Disposition": `attachment; filename="event-${eventId}.ics"`,
+  });
 }
 
 async function createEvent(event: APIGatewayProxyEvent) {

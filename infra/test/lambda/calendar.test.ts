@@ -188,6 +188,68 @@ describe("CalendarEvents CRUD", () => {
   });
 });
 
+describe("GET /calendar-events/{eventId}/ical", () => {
+  const event: CalendarEvent = {
+    eventId: "e1",
+    title: "夏祭り",
+    description: "園庭で開催します",
+    startAt: "2026-08-08T10:00:00+09:00",
+    endAt: "2026-08-08T14:00:00+09:00",
+    visibleCategoryIds: [],
+    authorId: "author-1",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+  };
+
+  test("閲覧権限があればtext/calendar形式で.icsを返す", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-CalendarEvents", Key: { eventId: "e1" } }).resolves({ Item: event });
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/calendar-events/{eventId}/ical",
+        httpMethod: "GET",
+        pathParameters: { eventId: "e1" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers?.["Content-Type"]).toBe("text/calendar; charset=utf-8");
+    expect(res.headers?.["Content-Disposition"]).toBe('attachment; filename="event-e1.ics"');
+    expect(res.body).toContain("BEGIN:VCALENDAR");
+    expect(res.body).toContain("SUMMARY:夏祭り");
+    expect(res.body).toContain("UID:e1@on-connect.app");
+  });
+
+  test("閲覧権限が無ければ403", async () => {
+    const hidden: CalendarEvent = { ...event, visibleCategoryIds: ["cat-fulltime"] };
+    ddbMock.on(GetCommand, { TableName: "test-CalendarEvents", Key: { eventId: "e1" } }).resolves({ Item: hidden });
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/calendar-events/{eventId}/ical",
+        httpMethod: "GET",
+        pathParameters: { eventId: "e1" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  test("予定が存在しなければ404", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-CalendarEvents", Key: { eventId: "e404" } }).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/calendar-events/{eventId}/ical",
+        httpMethod: "GET",
+        pathParameters: { eventId: "e404" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(404);
+  });
+});
+
 describe("CalendarCategories CRUD", () => {
   test("GET /calendar-categories は権限チェック無しで一覧を返す", async () => {
     const categories: CalendarCategory[] = [{ categoryId: "cc-1", name: "会議" }];

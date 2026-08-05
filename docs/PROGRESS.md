@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 5完了）
+# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 6完了＝計画6フェーズ全完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -26,14 +26,16 @@
   （詳細は下記3章26.参照）
 - **Phase 5（チャットのメンション機能）**：完了・web/mobile双方でブラウザ/型チェック確認済み
   （詳細は下記3章27.参照）
+- **Phase 6（カレンダーの個別予定`.ics`エクスポート＋リマインド）**：完了・web/mobile双方で
+  ブラウザ/型チェック確認済み（詳細は下記3章28.参照）。**これで実装計画ファイルの全6フェーズが完了**
 
-### 未着手のフェーズ（計画ファイル参照）
-- Phase 6：カレンダーの個別予定`.ics`エクスポート＋リマインド
+### 未着手のフェーズ
+無し（計画ファイルの6フェーズは全て完了。今後の候補は8章「次にやりそうなこと」参照）
 
 ### 現在のコミット状況
-Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）は
-**コミット済み・未push**（`git log`で確認すること。コミットハッシュ`eb37f80`まで）。
-**Phase 5（3章27.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
+Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
+Phase 5（3章27.）は**コミット済み・未push**（`git log`で確認すること。コミットハッシュ`573cfe9`まで）。
+**Phase 6（3章28.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
 次回セッション開始時は`git status`で確認し、必要ならユーザーに確認の上コミットすること。
 
 ### AWSデプロイの状況
@@ -66,7 +68,7 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
   `git push`が通る状態（credential helperは`gh auth setup-git`で設定）
 - Web: `npm run build --workspace apps/web` 成功
 - Mobile: `npx tsc --noEmit`（apps/mobile内）成功。シミュレータでの実機確認は未実施
-- `infra`: `cdk synth` と Jestテスト成功（Phase5完了時点で**88件**）
+- `infra`: `cdk synth` と Jestテスト成功（Phase6完了時点で**96件**）
 - **エクセルファイル読み込みの注意**：macOSの`~/.Trash`（ゴミ箱）はTCC制限で`openpyxl`等から直接読めない
   （`Operation not permitted`）。ユーザーにデスクトップ等へ移動してもらう必要がある
 
@@ -195,6 +197,43 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
       プロジェクト全体で88件、全green。`cdk synth`でGraphQLスキーマ・VTLの構文も確認済み
     - ブラウザでグループチャットに実際に`@`入力→候補表示→選択→本文挿入→送信→メンションタグ表示までの
       一連の流れを目視確認済み
+28. **【Phase 6】カレンダーの個別予定`.ics`エクスポート＋当日リマインド**：
+    - 新規`packages/shared/src/ics.ts`：`buildIcsForEvent(event: CalendarEvent): string`という純粋関数。
+      RFC5545準拠のiCalendar(VEVENT)文字列を生成（TEXT値のエスケープ処理込み、75octet行折り返しは
+      対象イベントが短文中心のため未対応＝意図的に省略）。Lambda・Web・Mobileの3箇所から共通利用
+    - **バンドルサイズの問題を発見・修正**：`calendar/crud.ts`から`buildIcsForEvent`を
+      `@on-connect/shared`のバレル(`index.ts`)経由でimportしたところ、同じバレルが`export * from "./holidays"`
+      している影響で、tree-shake不可なCJSライブラリ`@holiday-jp/holiday_jp`（祝日データ、1.4MB）が
+      丸ごとバンドルされ`CalendarFn`が11.7KB→276KBに肥大化する問題が`cdk synth`のログで発覚。
+      `@on-connect/shared/src/ics`から直接importする形に変更して13.7KBに復旧（このLambdaで唯一の
+      実行時import。他のLambdaは`@on-connect/shared`から型のみimportしているため影響なし）
+    - `infra/lambda/common/http.ts`に`rawResponse`ヘルパー追加（JSON以外のレスポンス用）。
+      `infra/lambda/common/date.ts`に`toTokyoDateString(isoString)`追加（任意のISO日時をAsia/Tokyo基準の
+      日付文字列に変換。既存の`tokyoDateString(offsetDays)`は「今日から何日後」専用だったため別関数に）
+    - `infra/lambda/calendar/crud.ts`：`GET /calendar-events/{eventId}/ical`を追加。既存の`getEvent`と同じ
+      `isVisibleToCategory`閲覧チェックを通した上で`buildIcsForEvent`の結果を`text/calendar`・
+      `Content-Disposition: attachment`で返す。`api-construct.ts`にルート配線
+    - 新規`infra/lambda/calendar/dailyReminder.ts`：毎朝7:00（Asia/Tokyo）、`CalendarEventsTable`を全件
+      スキャンし、開始日〜終了日（Asia/Tokyo基準）に今日が含まれる予定（単日・複数日どちらも対象）を抽出。
+      `isVisibleToCategory`＋`notificationStatus === "ON"`で対象者を絞り込み、`publishPush`
+      （Phase 5で新設した共通ヘルパー）で通知。`scheduler-construct.ts`に既存の
+      `DailyNotificationResetSchedule`と同じ`cron(0 7 * * ? *)`・`scheduleGroup`・
+      `schedulerInvocationRole`を共用する`CalendarDailyReminderSchedule`を追加
+    - `on-connect-stack.ts`：`SchedulerConstruct`が`pushTopic`を必要とするため、`NotificationConstruct`を
+      先にインスタンス化する順序に変更（計画通り）
+    - `infra/package.json`に変更無し（`@aws-sdk/client-sns`はPhase 5で追加済みのものを再利用）
+    - Web：`CalendarDetailPage.tsx`に「カレンダーに追加（.icsをダウンロード）」ボタンを追加。
+      `buildIcsForEvent`をクライアント側で直接呼び出し、Blob+`<a download>`で即ダウンロード
+      （バックエンド接続無しで動作、ブラウザで実際にクリックしてエラー無く動作することを確認済み）
+    - Mobile：`apps/mobile/package.json`に`expo-file-system`(`~17.0.1`)・`expo-sharing`(`~12.0.1`)を追加
+      （Expo SDK 51対応バージョン）。`CalendarDetailScreen.tsx`に同様のボタンを追加し、
+      `FileSystem.writeAsStringAsync`でキャッシュディレクトリに`.ics`を書き出した後
+      `Sharing.shareAsync`でシェアシート経由で共有する方式（ファイル名はOS非対応文字を`_`に置換）
+    - テスト：新規`infra/test/lambda/dailyReminder.test.ts`（単日イベント・複数日イベント（今日を跨ぐ）・
+      対象外イベント・閲覧カテゴリーフィルタ・対象0人ならSNS非発行の5ケース）。
+      `infra/test/lambda/calendar.test.ts`に`ical`エンドポイントのテスト3件
+      （200・text/calendarヘッダー確認、閲覧権限無し403、予定無し404）を追加。
+      プロジェクト全体で96件、全green。`cdk synth`でスケジュール・VTL含め構文確認済み
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -222,16 +261,20 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
 - チャット新着メッセージのプッシュ通知判定＋SNS発行ロジック（`pushNotification.ts`、27.参照）。
   forceNotify優先・メンション限定・デフォルト全員通知の3分岐、送信者除外まで実装・テスト済み
   （実際のモバイルプッシュ配信＝SNSトピック以降のAPNs/FCM接続は未実装）
+- カレンダー予定の個別`.ics`エクスポート（`buildIcsForEvent`、Web/Mobile/Lambdaで共通利用）と
+  当日リマインド通知（`dailyReminder.ts`、28.参照）。単日・複数日イベントの判定、閲覧カテゴリー
+  フィルタ、通知OFF除外まで実装・テスト済み
 
 ### 未実装（TODOコメントあり、501スタブ等）
 - Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装）
 - 掲示板の新規投稿通知Lambda（`bulletin/notifyOnPost.ts`）の実際の送信ロジック（`console.log`のみのスタブのまま。
-  チャット側の`pushNotification.ts`とは別ファイルで、Phase 5では対応対象外だった）
+  チャット側の`pushNotification.ts`とは別ファイルで、Phase 5・6のどちらでも対応対象外だった）
 - リアクション/コメントの永続化API（掲示板コメント用のDynamoDBテーブルは未作成）
 - Amazon Chime SDK Meeting/Attendee作成（音声通話は現状デモの着信画面遷移のみ）
 - Cognito認証・AppSyncクライアント接続（web/mobileともにログインはダミーで素通り。チャット機能全体が
   バックエンド未接続。そのためメンション機能もチャットと同様ローカルstateのみで完結）
-- カレンダーの`.ics`エクスポート・リマインド（Phase 6）
+- 実際のモバイルプッシュ配信（SNSトピック以降のAPNs/FCM接続。チャット・カレンダーリマインドとも
+  SNS発行までは実装済みだが、その先のデバイス配信は未接続）
 
 ## 6. 会話内で回答した設計質問（コード変更なし、方針のみ）
 
@@ -240,8 +283,8 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
   抑制されるのはOS通知（バナー・音）のみ。緊急連絡フラグ付きメッセージだけは例外的にOFF中でも配信、
   音声通話の着信のみ例外なく届かない
 - **Googleカレンダー連携は完全に廃止**（23.参照）。理由：対象者が実質1〜2名（ユーザー本人・理事長）で
-  他メンバーへの影響が薄く、常時同期の仕組みは過剰と判断。代わりにPhase 6で個別予定の`.ics`
-  ダウンロードボタンのみ実装予定
+  他メンバーへの影響が薄く、常時同期の仕組みは過剰と判断。代わりに28.（Phase 6）で個別予定の`.ics`
+  ダウンロードボタンを実装済み
 
 ## 7. 主要ファイルの場所（初見の人向け索引）
 
@@ -263,26 +306,27 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
 | 曜日・祝日ヘルパー（`@holiday-jp/holiday_jp`使用） | `packages/shared/src/holidays.ts` |
 | 通知自動リセット（休日連動） | `infra/lambda/users/dailyNotificationReset.ts` |
 | チャット新着メッセージのプッシュ通知判定（forceNotify/メンション/デフォルト全員） | `infra/lambda/messages/pushNotification.ts` |
+| カレンダー予定の当日リマインド | `infra/lambda/calendar/dailyReminder.ts` |
 | GraphQLスキーマ（チャット、mentionedUserIds含む） | `infra/graphql/schema.graphql` |
-| Lambda単体テスト（aws-sdk-client-mock使用、88件） | `infra/test/lambda/*.test.ts` |
+| Lambda単体テスト（aws-sdk-client-mock使用、96件） | `infra/test/lambda/*.test.ts` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ（4タブ：チャット/掲示板/カレンダー/メニュー） | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: メニュー画面（メンバー/シフト管理/リンク集/個人設定/管理者設定への導線） | `apps/web/src/pages/MenuPage.tsx` |
 | Web: 管理者設定（ユーザー権限編集・各種カテゴリー管理） | `apps/web/src/pages/AdminPage.tsx` |
-| Web: カレンダー一覧/詳細/編集 | `apps/web/src/pages/Calendar{Page,DetailPage,EventEditPage}.tsx` |
+| Web: カレンダー一覧/詳細（`.ics`エクスポート含む）/編集 | `apps/web/src/pages/Calendar{Page,DetailPage,EventEditPage}.tsx` |
 | Web: シフト管理（月間グリッド） | `apps/web/src/pages/ShiftManagementPage.tsx` |
 | Web: チャット詳細（`@`メンション対応） | `apps/web/src/pages/ChatRoomPage.tsx` |
 | Web/Mobile: メンバー検索・選択の共通コンポーネント | `apps/web/src/components/MemberPicker.tsx` / `apps/mobile/src/components/MemberPicker.tsx` |
+| iCalendar(.ics)生成の共通純粋関数（Lambda/Web/Mobileで共通利用） | `packages/shared/src/ics.ts` |
 | Mobile: ナビゲーション定義（4タブ＋MenuStackNavigator） | `apps/mobile/src/navigation/AppNavigator.tsx` |
 | Mobile: メニュー画面（メンバー/シフト管理/リンク集/個人設定への導線） | `apps/mobile/src/screens/MenuScreen.tsx` |
-| Mobile: カレンダー一覧/詳細/編集 | `apps/mobile/src/screens/Calendar{Screen,DetailScreen,EventEditScreen}.tsx` |
+| Mobile: カレンダー一覧/詳細（`.ics`エクスポート含む）/編集 | `apps/mobile/src/screens/Calendar{Screen,DetailScreen,EventEditScreen}.tsx` |
 | Mobile: シフト管理（月間グリッド、MenuStackNavigator配下） | `apps/mobile/src/screens/ShiftManagementScreen.tsx` |
 | Mobile: チャット詳細（`@`メンション対応） | `apps/mobile/src/screens/ChatRoomScreen.tsx` |
 | ブランドアイコン生成スクリプト／画像 | `scripts/generate-brand-icon.py` / `assets/brand/*.png` |
 
-## 8. 次にやりそうなこと（候補、優先度順ではない）
+## 8. 次にやりそうなこと（候補、優先度順ではない。計画ファイルの6フェーズは全て完了済み）
 
-- Phase 6：カレンダーの`.ics`エクスポート＋リマインド（計画ファイル参照）
 - リアクション/コメントの永続化、`notifyOnPost.ts`の実装（掲示板側は引き続きスタブのまま）
 - 予約送信の実スケジューリング
 - Cognito認証・AppSyncクライアント接続（チャット機能をバックエンドに繋ぐ）

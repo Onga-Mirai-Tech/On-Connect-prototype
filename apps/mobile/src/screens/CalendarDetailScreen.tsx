@@ -1,8 +1,16 @@
 import { useState } from "react";
 import { View, Text, Pressable, Alert, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockCalendarEvents, mockCalendarCategories, mockMembers, mockCurrentUserId } from "@on-connect/shared";
+import {
+  mockCalendarEvents,
+  mockCalendarCategories,
+  mockMembers,
+  mockCurrentUserId,
+  buildIcsForEvent,
+} from "@on-connect/shared";
 import type { CalendarStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 
@@ -59,6 +67,17 @@ export function CalendarDetailScreen({ route, navigation }: Props) {
     );
   };
 
+  const handleAddToCalendar = async () => {
+    const safeTitle = event.title.replace(/[\\/:*?"<>|]/g, "_");
+    const fileUri = `${FileSystem.cacheDirectory}${safeTitle}.ics`;
+    await FileSystem.writeAsStringAsync(fileUri, buildIcsForEvent(event), {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(fileUri, { mimeType: "text/calendar", dialogTitle: "カレンダーに追加" });
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -84,6 +103,10 @@ export function CalendarDetailScreen({ route, navigation }: Props) {
       </Text>
       <Text style={styles.author}>作成者：{memberName(event.authorId)}</Text>
       {event.description && <Text style={styles.description}>{event.description}</Text>}
+      <Pressable onPress={handleAddToCalendar} style={styles.addToCalendarButton}>
+        <Ionicons name="calendar-outline" size={16} color={colors.brandDark} />
+        <Text style={styles.addToCalendarText}>カレンダーに追加</Text>
+      </Pressable>
     </View>
   );
 }
@@ -96,5 +119,7 @@ const styles = StyleSheet.create({
   actionButton: { flexDirection: "row", alignItems: "center", gap: 4 },
   metaText: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
   author: { fontSize: 12, color: colors.textMuted, marginBottom: 12 },
-  description: { backgroundColor: colors.surface, borderRadius: 14, padding: 16 },
+  description: { backgroundColor: colors.surface, borderRadius: 14, padding: 16, marginBottom: 12 },
+  addToCalendarButton: { flexDirection: "row", alignItems: "center", gap: 6 },
+  addToCalendarText: { color: colors.brandDark, fontWeight: "600" },
 });

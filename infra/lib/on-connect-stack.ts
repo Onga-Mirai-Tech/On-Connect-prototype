@@ -29,20 +29,23 @@ export class OnConnectStack extends Stack {
       messagesTable: db.messagesTable,
     });
 
-    new SchedulerConstruct(this, "Scheduler", {
-      envName,
-      messagesTable: db.messagesTable,
-      usersTable: db.usersTable,
-      memberDailyStatusTable: db.memberDailyStatusTable,
-      chatApiUrl: chat.api.graphqlUrl,
-    });
-
-    new NotificationConstruct(this, "Notification", {
+    // SchedulerConstructがpushTopicを参照するため、NotificationConstructを先にインスタンス化する
+    const notification = new NotificationConstruct(this, "Notification", {
       envName,
       usersTable: db.usersTable,
       chatRoomsTable: db.chatRoomsTable,
       messagesTable: db.messagesTable,
       bulletinPostsTable: db.bulletinPostsTable,
+    });
+
+    new SchedulerConstruct(this, "Scheduler", {
+      envName,
+      messagesTable: db.messagesTable,
+      usersTable: db.usersTable,
+      memberDailyStatusTable: db.memberDailyStatusTable,
+      calendarEventsTable: db.calendarEventsTable,
+      pushTopic: notification.pushTopic,
+      chatApiUrl: chat.api.graphqlUrl,
     });
 
     const api = new ApiConstruct(this, "Api", {
