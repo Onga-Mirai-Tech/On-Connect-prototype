@@ -5,7 +5,10 @@
 
 export type NotificationStatus = "ON" | "OFF";
 
-/** ロールごとにON/OFF編集可能な権限フラグ（初期セットの一例） */
+/**
+ * メンバー1人1人が個別に持つ権限フラグ。
+ * ロール(Role)には紐づかず、Userレコード自体が実効的な権限を持つ（新規作成時は全項目false）。
+ */
 export interface RolePermissions {
   manageUsers: boolean;
   sendForceNotify: boolean;
@@ -13,12 +16,14 @@ export interface RolePermissions {
   manageOrgLinks: boolean;
   manageRoles: boolean;
   manageMemberCategories: boolean;
+  manageCalendarCategories: boolean;
+  manageShifts: boolean;
 }
 
+/** 役職などの表示ラベル。権限は持たない（権限は`User.permissions`が個別に持つ） */
 export interface Role {
   roleId: string;
   name: string;
-  permissions: RolePermissions;
 }
 
 export interface MemberCategory {
@@ -35,6 +40,7 @@ export interface User {
   roleId: string;
   memberCategoryId: string;
   notificationStatus: NotificationStatus;
+  permissions: RolePermissions;
   className?: string;
 }
 
@@ -69,10 +75,17 @@ export interface Message {
   createdAt: string;
 }
 
+/** 掲示板の表示カテゴリー一覧（管理者=manageBulletinCategories権限を持つ人のみ追加・編集・削除可） */
+export interface BulletinCategory {
+  categoryId: string;
+  name: string;
+}
+
 export interface BulletinPost {
   postId: string;
   title: string;
-  category: string;
+  /** BulletinCategoriesを参照する表示カテゴリー（未設定可） */
+  categoryId?: string;
   /** HTML編集に対応した本文（保存・表示ともにHTML文字列）。表示側でのサニタイズが必須。 */
   body: string;
   attachmentKeys?: string[];
@@ -92,25 +105,68 @@ export interface BulletinComment {
   createdAt: string;
 }
 
-export interface ScheduleCacheEvent {
-  eventId: string;
-  calendarId: string;
-  title: string;
-  startAt: string;
-  endAt: string;
+/** カレンダーの表示カテゴリー一覧（管理者=manageCalendarCategories権限を持つ人のみ追加・編集・削除可） */
+export interface CalendarCategory {
+  categoryId: string;
+  name: string;
 }
 
 /**
- * 表示するGoogleカレンダーの設定（OrgSettingsテーブル、settingId: "googleCalendar"）。
- * サービスアカウント方式を前提とし、対象カレンダーをサービスアカウントのメールアドレスへ
- * 読み取り専用共有した上で、ここにカレンダーIDを設定する（メンバー個々のOAuth認可は不要）。
- * 共有カレンダーの管理・編集自体はGoogleカレンダー側で行い、アプリ内は閲覧専用とする。
+ * 独立DBで管理する共有カレンダーの予定。Googleカレンダーとは同期しない。
+ * 全メンバーが作成・編集・削除できる（バックエンドでの権限チェックは無く、削除前の確認はフロント側の責務）。
  */
-export interface GoogleCalendarSetting {
-  settingId: "googleCalendar";
-  calendarId: string;
-  updatedBy: string;
+export interface CalendarEvent {
+  eventId: string;
+  title: string;
+  description?: string;
+  startAt: string;
+  endAt: string;
+  /** CalendarCategoriesを参照する表示カテゴリー（未設定可） */
+  categoryId?: string;
+  /** 空配列の場合は全メンバーに公開（BulletinPost.visibleCategoryIdsと同じ、職員カテゴリー単位の閲覧権限） */
+  visibleCategoryIds: string[];
+  authorId: string;
+  createdAt: string;
   updatedAt: string;
+}
+
+export type LeaveType = "FULL" | "AM" | "PM";
+/** 希望休（本人希望）か指定休（会社都合）かの記録用区分。通知OFF判定のロジックには影響しない */
+export type LeaveReason = "REQUESTED" | "ASSIGNED";
+
+/** 当番の種類一覧（例：早出／日直／1F見守）。manageShifts権限を持つ人のみ追加・編集・削除可 */
+export interface DutyType {
+  dutyTypeId: string;
+  name: string;
+  /** falseの場合、新規入力時の選択肢から外れる（学期中/長期休暇でコード体系が変わるため）。既存データはそのまま残る */
+  isActive: boolean;
+}
+
+/** シフトの種類一覧（例：早番／遅番、にこ1（朝）等）。manageShifts権限を持つ人のみ追加・編集・削除可 */
+export interface ShiftType {
+  shiftTypeId: string;
+  name: string;
+  isActive: boolean;
+}
+
+/**
+ * メンバー1人・1日ごとの休日／当番／シフトの記録。全項目、manageShifts権限を持つ人のみが編集できる
+ * （本人の分であっても自己申告はできない）。閲覧は全メンバーに開放する。
+ */
+export interface MemberDailyStatus {
+  date: string; // YYYY-MM-DD
+  userId: string;
+  leaveType?: LeaveType;
+  /** leaveTypeが設定されている場合のみ意味を持つ */
+  leaveReason?: LeaveReason;
+  /** 午前のシフト（ShiftTypesを参照）。1日通しの場合はpmShiftTypeIdと同じ値を入れる */
+  amShiftTypeId?: string;
+  /** 午後のシフト（ShiftTypesを参照） */
+  pmShiftTypeId?: string;
+  /** その日の当番（DutyTypesを参照、複数の当番を兼務できるため配列） */
+  dutyTypeIds?: string[];
+  updatedAt: string;
+  updatedBy: string;
 }
 
 export type CallStatus = "completed" | "missed" | "declined";

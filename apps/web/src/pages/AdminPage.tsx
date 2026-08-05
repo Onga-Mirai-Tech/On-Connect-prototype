@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   Users,
   ShieldCheck,
@@ -7,19 +7,49 @@ import {
   Link2,
   CalendarCog,
 } from "lucide-react";
-import { mockMembers, mockRoles, mockMemberCategories, mockOrgLinks } from "@on-connect/shared";
+import type { RolePermissions } from "@on-connect/shared";
+import {
+  mockMembers,
+  mockRoles,
+  mockMemberCategories,
+  mockBulletinCategories,
+  mockCalendarCategories,
+  mockOrgLinks,
+} from "@on-connect/shared";
 import { colors } from "../theme/colors";
 
-type AdminTab = "users" | "roles" | "memberCategories" | "bulletinCategories" | "links" | "calendar";
+type AdminTab = "users" | "roles" | "memberCategories" | "bulletinCategories" | "links" | "calendarCategories";
+
+/** 権限は今後ここにロールではなくメンバー単位で持たせる（設計変更により`Role`からは`permissions`が無くなった） */
+const permissionLabels: Record<keyof RolePermissions, string> = {
+  manageUsers: "ユーザー管理",
+  manageRoles: "ロール管理",
+  manageMemberCategories: "メンバーカテゴリ管理",
+  manageOrgLinks: "リンク集管理",
+  sendForceNotify: "緊急通知の送信",
+  manageBulletinCategories: "掲示板カテゴリー管理",
+  manageCalendarCategories: "カレンダーカテゴリー管理",
+  manageShifts: "当番・シフト編集",
+};
 
 /**
  * 管理者用設定画面（7章 11番）
- * ユーザー管理／ロール・権限管理（ON/OFF編集）／メンバーカテゴリ管理／掲示板カテゴリー管理／リンク集管理
- * ／カレンダー連携設定（表示するGoogleカレンダーの指定。編集自体はGoogleカレンダー側で行う）
+ * ユーザー管理（メンバー個別の権限ON/OFF編集）／ロール管理（名前ラベルのみ）／メンバーカテゴリ管理
+ * ／掲示板カテゴリー管理／リンク集管理／カレンダーカテゴリー管理
  */
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("users");
-  const [calendarId, setCalendarId] = useState("");
+  const [members, setMembers] = useState(mockMembers);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  const togglePermission = (userId: string, key: keyof RolePermissions) => {
+    // TODO: PUT /users/{userId} で permissions を更新する（現状はローカルstateのみ）
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.userId === userId ? { ...m, permissions: { ...m.permissions, [key]: !m.permissions[key] } } : m,
+      ),
+    );
+  };
 
   const tabs: { key: AdminTab; label: string; icon: typeof Users }[] = [
     { key: "users", label: "ユーザー管理", icon: Users },
@@ -27,12 +57,8 @@ export function AdminPage() {
     { key: "memberCategories", label: "メンバーカテゴリ管理", icon: Tags },
     { key: "bulletinCategories", label: "掲示板カテゴリー管理", icon: ClipboardList },
     { key: "links", label: "リンク集管理", icon: Link2 },
-    { key: "calendar", label: "カレンダー連携設定", icon: CalendarCog },
+    { key: "calendarCategories", label: "カレンダーカテゴリー管理", icon: CalendarCog },
   ];
-
-  const handleSaveCalendar = () => {
-    // TODO: PUT /calendar/config を呼び出し、OrgSettingsテーブルへ保存する
-  };
 
   return (
     <div>
@@ -54,7 +80,10 @@ export function AdminPage() {
       {tab === "users" && (
         <section>
           <h3>ユーザー管理</h3>
-          {/* TODO: ロール/メンバーカテゴリの割り当て編集をAPIに接続する（現状はダミーデータ表示） */}
+          <p style={{ fontSize: 13, color: colors.textMuted, maxWidth: 560 }}>
+            権限はロールではなく、メンバー1人1人に個別に設定します（最後の1名の「ユーザー管理」権限は削除・剥奪できません）。
+          </p>
+          {/* TODO: ロール/メンバーカテゴリの割り当て・権限編集をAPIに接続する（現状はローカルstateのみ） */}
           <div style={{ border: `1px solid ${colors.surface}`, borderRadius: 14, overflow: "hidden", maxWidth: 640 }}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
@@ -63,16 +92,42 @@ export function AdminPage() {
                 <th style={{ padding: 6 }}>ロール</th>
                 <th style={{ padding: 6 }}>メンバーカテゴリ</th>
                 <th style={{ padding: 6 }}>通知</th>
+                <th style={{ padding: 6 }}>権限</th>
               </tr>
             </thead>
             <tbody>
-              {mockMembers.map((m) => (
-                <tr key={m.userId} style={{ borderTop: `1px solid ${colors.surface}` }}>
-                  <td style={{ padding: 6 }}>{m.displayName}</td>
-                  <td style={{ padding: 6 }}>{mockRoles.find((r) => r.roleId === m.roleId)?.name}</td>
-                  <td style={{ padding: 6 }}>{mockMemberCategories.find((c) => c.categoryId === m.memberCategoryId)?.name}</td>
-                  <td style={{ padding: 6 }}>{m.notificationStatus === "ON" ? "オン" : "オフ"}</td>
-                </tr>
+              {members.map((m) => (
+                <Fragment key={m.userId}>
+                  <tr style={{ borderTop: `1px solid ${colors.surface}` }}>
+                    <td style={{ padding: 6 }}>{m.displayName}</td>
+                    <td style={{ padding: 6 }}>{mockRoles.find((r) => r.roleId === m.roleId)?.name}</td>
+                    <td style={{ padding: 6 }}>{mockMemberCategories.find((c) => c.categoryId === m.memberCategoryId)?.name}</td>
+                    <td style={{ padding: 6 }}>{m.notificationStatus === "ON" ? "オン" : "オフ"}</td>
+                    <td style={{ padding: 6 }}>
+                      <button onClick={() => setExpandedUserId(expandedUserId === m.userId ? null : m.userId)}>
+                        {expandedUserId === m.userId ? "閉じる" : "編集"}
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedUserId === m.userId && (
+                    <tr style={{ borderTop: `1px solid ${colors.surface}` }}>
+                      <td colSpan={5} style={{ padding: "8px 6px", background: colors.surface }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
+                          {(Object.keys(permissionLabels) as (keyof RolePermissions)[]).map((key) => (
+                            <label key={key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
+                              <input
+                                type="checkbox"
+                                checked={m.permissions[key]}
+                                onChange={() => togglePermission(m.userId, key)}
+                              />
+                              {permissionLabels[key]}
+                            </label>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -81,21 +136,16 @@ export function AdminPage() {
       )}
       {tab === "roles" && (
         <section>
-          <h3>ロール・権限管理</h3>
-          <p>権限項目をロールごとにON/OFF編集できます（最後の1名の管理者権限は削除不可）。</p>
-          {/* TODO: Rolesテーブルのpermissionsマップ編集UIをAPIに接続する（現状はダミーデータ表示） */}
-          {mockRoles.map((role) => (
-            <div key={role.roleId} style={{ marginBottom: 12 }}>
-              <strong>{role.name}</strong>
-              <ul style={{ margin: "4px 0", paddingLeft: 20, fontSize: 13, color: colors.textMuted }}>
-                {Object.entries(role.permissions).map(([key, value]) => (
-                  <li key={key}>
-                    {key}：{value ? "許可" : "不可"}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          <h3>ロール管理</h3>
+          <p style={{ fontSize: 13, color: colors.textMuted }}>
+            ロールは表示用の名前ラベルです（権限は「ユーザー管理」タブでメンバーごとに個別設定します）。
+          </p>
+          {/* TODO: 追加・編集・削除をAPIに接続する（現状はダミーデータ表示） */}
+          <ul>
+            {mockRoles.map((r) => (
+              <li key={r.roleId}>{r.name}</li>
+            ))}
+          </ul>
         </section>
       )}
       {tab === "memberCategories" && (
@@ -112,11 +162,11 @@ export function AdminPage() {
       {tab === "bulletinCategories" && (
         <section>
           <h3>掲示板カテゴリー管理</h3>
-          {/* TODO: 掲示板カテゴリーの追加・編集・削除 */}
+          {/* TODO: 追加・編集・削除をAPIに接続する（現状はダミーデータ表示） */}
           <ul>
-            <li>お知らせ</li>
-            <li>行事</li>
-            <li>緊急連絡</li>
+            {mockBulletinCategories.map((c) => (
+              <li key={c.categoryId}>{c.name}</li>
+            ))}
           </ul>
         </section>
       )}
@@ -133,30 +183,15 @@ export function AdminPage() {
           </ul>
         </section>
       )}
-      {tab === "calendar" && (
+      {tab === "calendarCategories" && (
         <section>
-          <h3>カレンダー連携設定</h3>
-          <p style={{ fontSize: 13, color: colors.textMuted, maxWidth: 560 }}>
-            共有カレンダーの作成・編集はこれまで通りGoogleカレンダー側で行います。ここではアプリ内に
-            閲覧専用で表示するカレンダーを指定するだけです。メンバー個々のGoogleアカウント連携は不要です。
-            あらかじめGoogle Cloudでサービスアカウントを作成し、表示したいGoogleカレンダー（園の共有カレンダー）の
-            共有設定でそのサービスアカウントのメールアドレスに「閲覧権限」を付与してください。
-            そのうえで、下記にカレンダーID（共有カレンダーの場合は
-            xxxx@group.calendar.google.com 形式、個人カレンダーの場合はそのアカウントのメールアドレス）を入力します。
-          </p>
-          <label style={{ display: "block", marginTop: 12 }}>
-            カレンダーID
-            <input
-              type="text"
-              value={calendarId}
-              onChange={(e) => setCalendarId(e.target.value)}
-              placeholder="xxxx@group.calendar.google.com"
-              style={{ display: "block", width: 360, marginTop: 4, padding: 8 }}
-            />
-          </label>
-          <button onClick={handleSaveCalendar} style={{ marginTop: 12 }}>
-            保存
-          </button>
+          <h3>カレンダーカテゴリー管理</h3>
+          {/* TODO: 追加・編集・削除をAPIに接続する（現状はダミーデータ表示） */}
+          <ul>
+            {mockCalendarCategories.map((c) => (
+              <li key={c.categoryId}>{c.name}</li>
+            ))}
+          </ul>
         </section>
       )}
     </div>

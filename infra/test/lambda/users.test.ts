@@ -11,35 +11,31 @@ import {
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import type { MemberCategory, Role, User } from "@on-connect/shared";
+import type { MemberCategory, Role, RolePermissions, User } from "@on-connect/shared";
 import { handler } from "../../lambda/users/index";
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-const adminRole: Role = {
-  roleId: "role-admin",
-  name: "管理者",
-  permissions: {
-    manageUsers: true,
-    sendForceNotify: true,
-    manageBulletinCategories: true,
-    manageOrgLinks: true,
-    manageRoles: true,
-    manageMemberCategories: true,
-  },
+const allPermissionsOff: RolePermissions = {
+  manageUsers: false,
+  sendForceNotify: false,
+  manageBulletinCategories: false,
+  manageOrgLinks: false,
+  manageRoles: false,
+  manageMemberCategories: false,
+  manageCalendarCategories: false,
+  manageShifts: false,
 };
 
-const memberRole: Role = {
-  roleId: "role-member",
-  name: "一般メンバー",
-  permissions: {
-    manageUsers: false,
-    sendForceNotify: false,
-    manageBulletinCategories: false,
-    manageOrgLinks: false,
-    manageRoles: false,
-    manageMemberCategories: false,
-  },
+const allPermissionsOn: RolePermissions = {
+  manageUsers: true,
+  sendForceNotify: true,
+  manageBulletinCategories: true,
+  manageOrgLinks: true,
+  manageRoles: true,
+  manageMemberCategories: true,
+  manageCalendarCategories: true,
+  manageShifts: true,
 };
 
 // デフォルトの呼び出し元(sub: "caller-1")を管理者/一般メンバーとして扱いたい場合のダミーユーザー
@@ -51,18 +47,18 @@ const adminCallerUser: User = {
   roleId: "role-admin",
   memberCategoryId: "cat-1",
   notificationStatus: "ON",
+  permissions: allPermissionsOn,
 };
 
 const memberCallerUser: User = {
   ...adminCallerUser,
   displayName: "呼び出し一般メンバー",
-  roleId: "role-member",
+  permissions: allPermissionsOff,
 };
 
-/** 呼び出し元(caller-1)がmanageUsers/manageRoles/manageMemberCategoriesを全て持つ管理者であるようにモックする */
+/** 呼び出し元(caller-1)が全ての管理権限を持つようにモックする（Usersテーブルの参照のみで完結） */
 function mockCallerAsAdmin() {
   ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "caller-1" } }).resolves({ Item: adminCallerUser });
-  ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
 }
 
 /** 呼び出し元(caller-1)が何の管理権限も持たない一般メンバーであるようにモックする */
@@ -70,7 +66,6 @@ function mockCallerAsMember() {
   ddbMock
     .on(GetCommand, { TableName: "test-Users", Key: { userId: "caller-1" } })
     .resolves({ Item: memberCallerUser });
-  ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
 }
 
 function buildEvent(overrides: Partial<APIGatewayProxyEvent>): APIGatewayProxyEvent {
@@ -115,6 +110,7 @@ describe("Users CRUD", () => {
         roleId: "role-member",
         memberCategoryId: "cat-1",
         notificationStatus: "ON",
+        permissions: allPermissionsOff,
       },
     ];
     ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: users });
@@ -125,26 +121,27 @@ describe("Users CRUD", () => {
     expect(JSON.parse(res.body)).toEqual(users);
   });
 
-  test("POST /users はUsersテーブルが空なら権限チェック無しで作成できる（初期セットアップ）", async () => {
+  test("POST /users はUsersテーブルが空なら権限チェック無しで作成でき、permissions未指定ならall-falseになる（初期セットアップ）", async () => {
     ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] }); // isTableEmpty -> true
     ddbMock.on(GetCommand, { TableName: "test-Users" }).resolves({});
     ddbMock.on(PutCommand).resolves({});
 
-    const input: User = {
+    const input = {
       userId: "u2",
       displayName: "佐藤",
       furigana: "さとう",
       email: "sato@example.com",
       roleId: "role-member",
       memberCategoryId: "cat-1",
-      notificationStatus: "ON",
     };
     const res = await invoke(
       buildEvent({ resource: "/users", httpMethod: "POST", body: JSON.stringify(input) }),
     );
 
     expect(res.statusCode).toBe(201);
-    expect(JSON.parse(res.body)).toMatchObject(input);
+    const body = JSON.parse(res.body) as User;
+    expect(body).toMatchObject(input);
+    expect(body.permissions).toEqual(allPermissionsOff);
   });
 
   test("POST /users はUsersテーブルが空でなければmanageUsers権限が無いと403", async () => {
@@ -224,6 +221,7 @@ describe("Users CRUD", () => {
       roleId: "role-member",
       memberCategoryId: "cat-1",
       notificationStatus: "ON",
+      permissions: allPermissionsOff,
     };
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u5" } }).resolves({ Item: self });
     ddbMock.on(PutCommand).resolves({});
@@ -251,9 +249,9 @@ describe("Users CRUD", () => {
       roleId: "role-member",
       memberCategoryId: "cat-1",
       notificationStatus: "ON",
+      permissions: allPermissionsOff,
     };
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u5" } }).resolves({ Item: self });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
 
     const res = await invoke(
       buildEvent({
@@ -277,6 +275,7 @@ describe("Users CRUD", () => {
       roleId: "role-member",
       memberCategoryId: "cat-1",
       notificationStatus: "ON",
+      permissions: allPermissionsOff,
     };
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u6" } }).resolves({ Item: target });
     mockCallerAsMember();
@@ -293,7 +292,7 @@ describe("Users CRUD", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  test("PUT /users/{userId} で最後の管理者(本人)を一般ロールへ降格しようとすると409", async () => {
+  test("PUT /users/{userId} で最後の管理者(本人)からmanageUsersを外そうとすると409", async () => {
     const adminUser: User = {
       userId: "u1",
       displayName: "園長",
@@ -302,28 +301,26 @@ describe("Users CRUD", () => {
       roleId: "role-admin",
       memberCategoryId: "cat-1",
       notificationStatus: "ON",
+      permissions: allPermissionsOn,
     };
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u1" } }).resolves({ Item: adminUser });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
-    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole, memberRole] });
-    // ユーザーは自分1人だけ（=自分が最後の管理者）
-    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [adminUser] });
+    // ユーザーは自分1人だけ（=自分が最後の管理者）。FilterExpressionで自分自身は除外される想定なのでItemsは空。
+    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] });
 
     const res = await invoke(
       buildEvent({
         resource: "/users/{userId}",
         httpMethod: "PUT",
         pathParameters: { userId: "u1" },
-        body: JSON.stringify({ roleId: "role-member" }),
-        ...asUser("u1"), // 本人(管理者)が自分自身を降格しようとするケース
+        body: JSON.stringify({ permissions: allPermissionsOff }),
+        ...asUser("u1"), // 本人(管理者)が自分自身のmanageUsersを外そうとするケース
       }),
     );
 
     expect(res.statusCode).toBe(409);
   });
 
-  test("PUT /users/{userId} で他に管理者がいれば降格できる", async () => {
+  test("PUT /users/{userId} で他に管理者がいればmanageUsersを外せる", async () => {
     const adminUser1: User = {
       userId: "u1",
       displayName: "園長",
@@ -332,13 +329,11 @@ describe("Users CRUD", () => {
       roleId: "role-admin",
       memberCategoryId: "cat-1",
       notificationStatus: "ON",
+      permissions: allPermissionsOn,
     };
     const adminUser2: User = { ...adminUser1, userId: "u2", displayName: "主任" };
 
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u1" } }).resolves({ Item: adminUser1 });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
-    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole, memberRole] });
     ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [adminUser1, adminUser2] });
     ddbMock.on(PutCommand).resolves({});
 
@@ -347,7 +342,7 @@ describe("Users CRUD", () => {
         resource: "/users/{userId}",
         httpMethod: "PUT",
         pathParameters: { userId: "u1" },
-        body: JSON.stringify({ roleId: "role-member" }),
+        body: JSON.stringify({ permissions: allPermissionsOff }),
         ...asUser("u1"),
       }),
     );
@@ -374,11 +369,11 @@ describe("Users CRUD", () => {
       roleId: "role-admin",
       memberCategoryId: "cat-1",
       notificationStatus: "ON",
+      permissions: allPermissionsOn,
     };
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u1" } }).resolves({ Item: adminUser });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
-    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole, memberRole] });
-    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [adminUser] });
+    // FilterExpressionで自分自身は除外される想定なのでItemsは空（=他に管理者がいない）。
+    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] });
 
     const res = await invoke(
       buildEvent({
@@ -401,10 +396,10 @@ describe("Users CRUD", () => {
       roleId: "role-member",
       memberCategoryId: "cat-1",
       notificationStatus: "ON",
+      permissions: allPermissionsOff,
     };
     mockCallerAsAdmin();
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u3" } }).resolves({ Item: memberUser });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
     ddbMock.on(DeleteCommand).resolves({});
 
     const res = await invoke(
@@ -425,36 +420,29 @@ describe("Users CRUD", () => {
   });
 });
 
-describe("Roles CRUD", () => {
+describe("Roles CRUD（名前だけのラベル、権限は持たない）", () => {
   test("POST /roles はRolesテーブルが空なら権限チェック無しで作成できる（初期セットアップ）", async () => {
     ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [] });
     ddbMock.on(GetCommand, { TableName: "test-Roles" }).resolves({});
     ddbMock.on(PutCommand).resolves({});
 
     const res = await invoke(
-      buildEvent({
-        resource: "/roles",
-        httpMethod: "POST",
-        body: JSON.stringify({ name: "事務職員", permissions: memberRole.permissions }),
-      }),
+      buildEvent({ resource: "/roles", httpMethod: "POST", body: JSON.stringify({ name: "事務職員" }) }),
     );
 
     expect(res.statusCode).toBe(201);
     const body = JSON.parse(res.body) as Role;
     expect(body.name).toBe("事務職員");
     expect(typeof body.roleId).toBe("string");
+    expect((body as unknown as { permissions?: unknown }).permissions).toBeUndefined();
   });
 
   test("POST /roles はRolesテーブルが空でなければmanageRoles権限が無いと403", async () => {
-    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole] });
+    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [{ roleId: "role-admin" }] });
     mockCallerAsMember();
 
     const res = await invoke(
-      buildEvent({
-        resource: "/roles",
-        httpMethod: "POST",
-        body: JSON.stringify({ name: "事務職員", permissions: memberRole.permissions }),
-      }),
+      buildEvent({ resource: "/roles", httpMethod: "POST", body: JSON.stringify({ name: "事務職員" }) }),
     );
 
     expect(res.statusCode).toBe(403);
@@ -475,51 +463,24 @@ describe("Roles CRUD", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  test("PUT /roles/{roleId} で唯一の管理者ロールからmanageUsersを外すと409", async () => {
-    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "caller-1" } }).resolves({ Item: adminCallerUser });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
-    // adminRoleを除外すると管理者ロールが無い(=他に管理者がいない)状態
-    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole, memberRole] });
-
-    const res = await invoke(
-      buildEvent({
-        resource: "/roles/{roleId}",
-        httpMethod: "PUT",
-        pathParameters: { roleId: "role-admin" },
-        body: JSON.stringify({ permissions: { ...adminRole.permissions, manageUsers: false } }),
-      }),
-    );
-
-    expect(res.statusCode).toBe(409);
-  });
-
-  test("PUT /roles/{roleId} は他に管理者ロールがあればmanageUsersを外せる", async () => {
-    const secondAdminRole: Role = { ...adminRole, roleId: "role-admin-2" };
-    const secondAdminUser: User = {
-      userId: "u9",
-      displayName: "副管理者",
-      furigana: "ふくかんりしゃ",
-      email: "vice@example.com",
-      roleId: "role-admin-2",
-      memberCategoryId: "cat-1",
-      notificationStatus: "ON",
-    };
-    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "caller-1" } }).resolves({ Item: adminCallerUser });
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-admin" } }).resolves({ Item: adminRole });
-    ddbMock.on(ScanCommand, { TableName: "test-Roles" }).resolves({ Items: [adminRole, secondAdminRole, memberRole] });
-    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [secondAdminUser] });
+  test("PUT /roles/{roleId} はmanageRoles権限があれば名前を変更できる", async () => {
+    mockCallerAsAdmin();
+    ddbMock
+      .on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } })
+      .resolves({ Item: { roleId: "role-member", name: "一般メンバー" } });
     ddbMock.on(PutCommand).resolves({});
 
     const res = await invoke(
       buildEvent({
         resource: "/roles/{roleId}",
         httpMethod: "PUT",
-        pathParameters: { roleId: "role-admin" },
-        body: JSON.stringify({ permissions: { ...adminRole.permissions, manageUsers: false } }),
+        pathParameters: { roleId: "role-member" },
+        body: JSON.stringify({ name: "パート" }),
       }),
     );
 
     expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).name).toBe("パート");
   });
 
   test("DELETE /roles/{roleId} はmanageRoles権限が無いと403", async () => {
@@ -534,7 +495,9 @@ describe("Roles CRUD", () => {
 
   test("DELETE /roles/{roleId} は割り当て中のユーザーがいる場合409", async () => {
     mockCallerAsAdmin();
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
+    ddbMock
+      .on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } })
+      .resolves({ Item: { roleId: "role-member", name: "一般メンバー" } });
     ddbMock
       .on(ScanCommand, { TableName: "test-Users", FilterExpression: "roleId = :roleId" })
       .resolves({ Items: [{ userId: "u1" }] });
@@ -548,7 +511,9 @@ describe("Roles CRUD", () => {
 
   test("DELETE /roles/{roleId} は未使用なら削除できる", async () => {
     mockCallerAsAdmin();
-    ddbMock.on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } }).resolves({ Item: memberRole });
+    ddbMock
+      .on(GetCommand, { TableName: "test-Roles", Key: { roleId: "role-member" } })
+      .resolves({ Item: { roleId: "role-member", name: "一般メンバー" } });
     ddbMock
       .on(ScanCommand, { TableName: "test-Users", FilterExpression: "roleId = :roleId" })
       .resolves({ Items: [] });

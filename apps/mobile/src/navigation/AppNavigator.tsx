@@ -15,6 +15,8 @@ import { BulletinScreen } from "../screens/BulletinScreen";
 import { BulletinDetailScreen } from "../screens/BulletinDetailScreen";
 import { BulletinEditScreen } from "../screens/BulletinEditScreen";
 import { CalendarScreen } from "../screens/CalendarScreen";
+import { CalendarEventEditScreen } from "../screens/CalendarEventEditScreen";
+import { CalendarDetailScreen } from "../screens/CalendarDetailScreen";
 import { LinksScreen } from "../screens/LinksScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import { HeaderStatus } from "./HeaderStatus";
@@ -33,12 +35,18 @@ export type BulletinStackParamList = {
   BulletinEdit: { postId?: string };
 };
 
+export type CalendarStackParamList = {
+  CalendarList: undefined;
+  CalendarDetail: { eventId: string };
+  CalendarEventEdit: { eventId?: string };
+};
+
 // 管理者機能はブラウザ版（apps/web）のみで提供し、モバイル版にはタブを設けない。
 export type HomeTabParamList = {
   ChatTab: NavigatorScreenParams<ChatStackParamList> | undefined;
   Members: undefined;
   BulletinTab: NavigatorScreenParams<BulletinStackParamList> | undefined;
-  Calendar: undefined;
+  Calendar: NavigatorScreenParams<CalendarStackParamList> | undefined;
   Links: undefined;
   Settings: undefined;
 };
@@ -64,6 +72,7 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
 const HomeTab = createBottomTabNavigator<HomeTabParamList>();
 const ChatStack = createNativeStackNavigator<ChatStackParamList>();
 const BulletinStack = createNativeStackNavigator<BulletinStackParamList>();
+const CalendarStack = createNativeStackNavigator<CalendarStackParamList>();
 
 function ChatStackNavigator() {
   return (
@@ -102,6 +111,24 @@ function BulletinStackNavigator() {
   );
 }
 
+function CalendarStackNavigator() {
+  return (
+    <CalendarStack.Navigator>
+      <CalendarStack.Screen
+        name="CalendarList"
+        component={CalendarScreen}
+        options={{ title: "カレンダー", headerLeft: () => <HeaderStatus /> }}
+      />
+      <CalendarStack.Screen name="CalendarDetail" component={CalendarDetailScreen} options={{ title: "" }} />
+      <CalendarStack.Screen
+        name="CalendarEventEdit"
+        component={CalendarEventEditScreen}
+        options={{ title: "予定" }}
+      />
+    </CalendarStack.Navigator>
+  );
+}
+
 /** ホーム画面（7章 2番）：チャット／メンバー／掲示板／カレンダー／リンク集のタブ構成 + 設定 */
 function HomeTabs() {
   return (
@@ -117,7 +144,7 @@ function HomeTabs() {
       <HomeTab.Screen name="ChatTab" component={ChatStackNavigator} options={{ title: "チャット", headerShown: false }} />
       <HomeTab.Screen name="Members" component={MembersScreen} options={{ title: "メンバー" }} />
       <HomeTab.Screen name="BulletinTab" component={BulletinStackNavigator} options={{ title: "掲示板", headerShown: false }} />
-      <HomeTab.Screen name="Calendar" component={CalendarScreen} options={{ title: "カレンダー" }} />
+      <HomeTab.Screen name="Calendar" component={CalendarStackNavigator} options={{ title: "カレンダー", headerShown: false }} />
       <HomeTab.Screen name="Links" component={LinksScreen} options={{ title: "リンク集" }} />
       <HomeTab.Screen name="Settings" component={SettingsScreen} options={{ title: "設定" }} />
     </HomeTab.Navigator>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { mockBulletinPosts, mockMemberCategories } from "@on-connect/shared";
+import { mockBulletinPosts, mockBulletinCategories, mockMemberCategories } from "@on-connect/shared";
 import { HtmlEditor } from "../components/HtmlEditor";
 
 /**
@@ -37,10 +37,12 @@ export function BulletinEditPage() {
       </label>
       <label>
         カテゴリー：
-        <select defaultValue={existingPost?.category ?? "お知らせ"}>
-          <option>お知らせ</option>
-          <option>行事</option>
-          <option>緊急連絡</option>
+        <select defaultValue={existingPost?.categoryId ?? mockBulletinCategories[0]?.categoryId}>
+          {mockBulletinCategories.map((c) => (
+            <option key={c.categoryId} value={c.categoryId}>
+              {c.name}
+            </option>
+          ))}
         </select>
       </label>
       <div style={{ marginTop: 8 }}>

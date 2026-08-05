@@ -13,10 +13,14 @@ export class DatabaseConstruct extends Construct {
   public readonly chatRoomsTable: dynamodb.Table;
   public readonly messagesTable: dynamodb.Table;
   public readonly bulletinPostsTable: dynamodb.Table;
-  public readonly scheduleCacheTable: dynamodb.Table;
+  public readonly bulletinCategoriesTable: dynamodb.Table;
+  public readonly calendarEventsTable: dynamodb.Table;
+  public readonly calendarCategoriesTable: dynamodb.Table;
   public readonly callLogsTable: dynamodb.Table;
   public readonly orgLinksTable: dynamodb.Table;
-  public readonly orgSettingsTable: dynamodb.Table;
+  public readonly dutyTypesTable: dynamodb.Table;
+  public readonly shiftTypesTable: dynamodb.Table;
+  public readonly memberDailyStatusTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, envName: string) {
     super(scope, id);
@@ -69,11 +73,24 @@ export class DatabaseConstruct extends Construct {
       stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
     });
 
-    this.scheduleCacheTable = new dynamodb.Table(this, "ScheduleCacheTable", {
+    // 掲示板の表示カテゴリー一覧（5.3.1）
+    this.bulletinCategoriesTable = new dynamodb.Table(this, "BulletinCategoriesTable", {
       ...commonProps,
-      tableName: `on-connect-${envName}-ScheduleCache`,
-      partitionKey: { name: "calendarId", type: dynamodb.AttributeType.STRING },
-      sortKey: { name: "eventId", type: dynamodb.AttributeType.STRING },
+      tableName: `on-connect-${envName}-BulletinCategories`,
+      partitionKey: { name: "categoryId", type: dynamodb.AttributeType.STRING },
+    });
+
+    // 独立DB管理の共有カレンダー（Googleカレンダーとは同期しない、全メンバーが編集可）
+    this.calendarEventsTable = new dynamodb.Table(this, "CalendarEventsTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-CalendarEvents`,
+      partitionKey: { name: "eventId", type: dynamodb.AttributeType.STRING },
+    });
+
+    this.calendarCategoriesTable = new dynamodb.Table(this, "CalendarCategoriesTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-CalendarCategories`,
+      partitionKey: { name: "categoryId", type: dynamodb.AttributeType.STRING },
     });
 
     this.callLogsTable = new dynamodb.Table(this, "CallLogsTable", {
@@ -88,11 +105,25 @@ export class DatabaseConstruct extends Construct {
       partitionKey: { name: "linkId", type: dynamodb.AttributeType.STRING },
     });
 
-    // 組織単位の設定値（表示するGoogleカレンダーのID 等）を保持する単一項目ストア
-    this.orgSettingsTable = new dynamodb.Table(this, "OrgSettingsTable", {
+    // 休日・当番・シフトの種類一覧（manageShifts権限を持つ人のみ変更可）
+    this.dutyTypesTable = new dynamodb.Table(this, "DutyTypesTable", {
       ...commonProps,
-      tableName: `on-connect-${envName}-OrgSettings`,
-      partitionKey: { name: "settingId", type: dynamodb.AttributeType.STRING },
+      tableName: `on-connect-${envName}-DutyTypes`,
+      partitionKey: { name: "dutyTypeId", type: dynamodb.AttributeType.STRING },
+    });
+
+    this.shiftTypesTable = new dynamodb.Table(this, "ShiftTypesTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-ShiftTypes`,
+      partitionKey: { name: "shiftTypeId", type: dynamodb.AttributeType.STRING },
+    });
+
+    // 休日・当番・シフトのメンバー別・日別記録。PK=dateにすることで「その日の全員分」を1クエリで引ける
+    this.memberDailyStatusTable = new dynamodb.Table(this, "MemberDailyStatusTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-MemberDailyStatus`,
+      partitionKey: { name: "date", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "userId", type: dynamodb.AttributeType.STRING },
     });
   }
 }

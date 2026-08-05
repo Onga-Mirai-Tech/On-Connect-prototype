@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { DeleteCommand, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import type { BulletinPost, User } from "@on-connect/shared";
-import { docClient } from "../common/dynamo";
+import type { BulletinCategory, BulletinPost, User } from "@on-connect/shared";
+import { requirePermission } from "../common/authz";
+import { docClient, isTableEmpty } from "../common/dynamo";
 import {
   HttpError,
   getCurrentUserId,
@@ -11,8 +12,10 @@ import {
   parseJsonBody,
   requireParam,
 } from "../common/http";
+import { isVisibleToCategory } from "../common/visibility";
 
 const BULLETIN_POSTS_TABLE_NAME = process.env.BULLETIN_POSTS_TABLE_NAME!;
+const BULLETIN_CATEGORIES_TABLE_NAME = process.env.BULLETIN_CATEGORIES_TABLE_NAME!;
 const USERS_TABLE_NAME = process.env.USERS_TABLE_NAME!;
 
 /**
@@ -33,16 +36,29 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       if (httpMethod === "PUT") return updatePost(postId, event);
       if (httpMethod === "DELETE") return deletePost(postId);
     }
+    if (resource === "/bulletin-categories") {
+      if (httpMethod === "GET") return listCategories();
+      if (httpMethod === "POST") return createCategory(event);
+    }
+    if (resource === "/bulletin-categories/{categoryId}") {
+      const categoryId = requireParam(event, "categoryId");
+      if (httpMethod === "PUT") return updateCategory(categoryId, event);
+      if (httpMethod === "DELETE") return deleteCategory(categoryId, event);
+    }
 
     throw new HttpError(404, `対応していないルートです: ${httpMethod} ${resource}`);
   });
+
+// ---------------------------------------------------------------------------
+// BulletinPosts
+// ---------------------------------------------------------------------------
 
 async function listPosts(event: APIGatewayProxyEvent) {
   const memberCategoryId = await currentUserMemberCategoryId(event);
   const result = await docClient.send(new ScanCommand({ TableName: BULLETIN_POSTS_TABLE_NAME }));
   const posts = (result.Items as BulletinPost[] | undefined) ?? [];
   const visible = posts
-    .filter((post) => isVisibleTo(post, memberCategoryId))
+    .filter((post) => isVisibleToCategory(post.visibleCategoryIds, memberCategoryId))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return jsonResponse(200, visible);
 }
@@ -52,7 +68,7 @@ async function getPost(postId: string, event: APIGatewayProxyEvent) {
   if (!post) throw new HttpError(404, "投稿が見つかりません");
 
   const memberCategoryId = await currentUserMemberCategoryId(event);
-  if (!isVisibleTo(post, memberCategoryId)) {
+  if (!isVisibleToCategory(post.visibleCategoryIds, memberCategoryId)) {
     throw new HttpError(403, "この投稿を閲覧する権限がありません");
   }
   return jsonResponse(200, post);
@@ -60,21 +76,18 @@ async function getPost(postId: string, event: APIGatewayProxyEvent) {
 
 async function createPost(event: APIGatewayProxyEvent) {
   const authorId = getCurrentUserId(event);
-  const input = parseJsonBody<Pick<BulletinPost, "title" | "category" | "body"> & Partial<BulletinPost>>(
-    event,
-  );
+  const input = parseJsonBody<Pick<BulletinPost, "title" | "body"> & Partial<BulletinPost>>(event);
   if (!input.title) throw new HttpError(400, "title は必須です");
-  if (!input.category) throw new HttpError(400, "category は必須です");
   if (!input.body) throw new HttpError(400, "body は必須です");
 
   const now = new Date().toISOString();
   const post: BulletinPost = {
     postId: randomUUID(),
     title: input.title,
-    category: input.category,
     body: input.body,
     authorId,
     visibleCategoryIds: input.visibleCategoryIds ?? [],
+    ...(input.categoryId ? { categoryId: input.categoryId } : {}),
     ...(input.attachmentKeys ? { attachmentKeys: input.attachmentKeys } : {}),
     createdAt: now,
     updatedAt: now,
@@ -113,15 +126,78 @@ async function fetchPost(postId: string): Promise<BulletinPost | undefined> {
   return result.Item as BulletinPost | undefined;
 }
 
-/** 空配列(=全体公開)、または閲覧者のmemberCategoryIdが含まれる場合に閲覧可能とする（設計書5.3.3） */
-function isVisibleTo(post: BulletinPost, memberCategoryId: string): boolean {
-  return post.visibleCategoryIds.length === 0 || post.visibleCategoryIds.includes(memberCategoryId);
-}
-
 async function currentUserMemberCategoryId(event: APIGatewayProxyEvent): Promise<string> {
   const userId = getCurrentUserId(event);
   const result = await docClient.send(new GetCommand({ TableName: USERS_TABLE_NAME, Key: { userId } }));
   const user = result.Item as User | undefined;
   if (!user) throw new HttpError(403, "ユーザー情報が見つかりません");
   return user.memberCategoryId;
+}
+
+// ---------------------------------------------------------------------------
+// BulletinCategories（表示カテゴリー一覧。manageBulletinCategories権限を持つ人のみ変更可）
+// ---------------------------------------------------------------------------
+
+async function listCategories() {
+  const result = await docClient.send(new ScanCommand({ TableName: BULLETIN_CATEGORIES_TABLE_NAME }));
+  return jsonResponse(200, result.Items ?? []);
+}
+
+async function createCategory(event: APIGatewayProxyEvent) {
+  // テーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで作成できる。
+  if (!(await isTableEmpty(BULLETIN_CATEGORIES_TABLE_NAME))) {
+    await requirePermission(event, "manageBulletinCategories", USERS_TABLE_NAME);
+  }
+
+  const input = parseJsonBody<Omit<BulletinCategory, "categoryId"> & { categoryId?: string }>(event);
+  if (!input.name) throw new HttpError(400, "name は必須です");
+
+  const categoryId = input.categoryId ?? randomUUID();
+  const existing = await fetchCategory(categoryId);
+  if (existing) throw new HttpError(409, "このcategoryIdは既に登録されています");
+
+  const category: BulletinCategory = { categoryId, name: input.name };
+  await docClient.send(new PutCommand({ TableName: BULLETIN_CATEGORIES_TABLE_NAME, Item: category }));
+  return jsonResponse(201, category);
+}
+
+async function updateCategory(categoryId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageBulletinCategories", USERS_TABLE_NAME);
+
+  const input = parseJsonBody<Partial<BulletinCategory>>(event);
+  const current = await fetchCategory(categoryId);
+  if (!current) throw new HttpError(404, "掲示板カテゴリーが見つかりません");
+
+  const updated: BulletinCategory = { ...current, ...input, categoryId };
+  await docClient.send(new PutCommand({ TableName: BULLETIN_CATEGORIES_TABLE_NAME, Item: updated }));
+  return jsonResponse(200, updated);
+}
+
+async function deleteCategory(categoryId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageBulletinCategories", USERS_TABLE_NAME);
+
+  const current = await fetchCategory(categoryId);
+  if (!current) throw new HttpError(404, "掲示板カテゴリーが見つかりません");
+
+  const postsWithCategory = await docClient.send(
+    new ScanCommand({
+      TableName: BULLETIN_POSTS_TABLE_NAME,
+      FilterExpression: "categoryId = :categoryId",
+      ExpressionAttributeValues: { ":categoryId": categoryId },
+      ProjectionExpression: "postId",
+    }),
+  );
+  if ((postsWithCategory.Items ?? []).length > 0) {
+    throw new HttpError(409, "このカテゴリーは現在投稿に使用されているため削除できません");
+  }
+
+  await docClient.send(new DeleteCommand({ TableName: BULLETIN_CATEGORIES_TABLE_NAME, Key: { categoryId } }));
+  return jsonResponse(204, {});
+}
+
+async function fetchCategory(categoryId: string): Promise<BulletinCategory | undefined> {
+  const result = await docClient.send(
+    new GetCommand({ TableName: BULLETIN_CATEGORIES_TABLE_NAME, Key: { categoryId } }),
+  );
+  return result.Item as BulletinCategory | undefined;
 }

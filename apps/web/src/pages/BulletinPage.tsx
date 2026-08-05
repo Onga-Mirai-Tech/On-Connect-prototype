@@ -1,8 +1,11 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { AlertTriangle, Search } from "lucide-react";
-import { mockBulletinPosts } from "@on-connect/shared";
+import { mockBulletinPosts, mockBulletinCategories } from "@on-connect/shared";
 import { colors } from "../theme/colors";
+
+const categoryName = (categoryId: string | undefined) =>
+  mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
 
 const stripHtml = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
@@ -17,12 +20,11 @@ const previewText = (html: string, maxLength = 90) => {
  * TODO: GET /bulletin-posts にサーバーサイド検索を実装する（現状はクライアント側フィルタ）。
  */
 export function BulletinPage() {
-  const [category, setCategory] = useState<string>("すべて");
+  const [categoryId, setCategoryId] = useState<string>("all");
   const [query, setQuery] = useState("");
-  const categories = ["すべて", "お知らせ", "行事", "緊急連絡"];
   const posts = [...mockBulletinPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const filteredPosts = posts
-    .filter((p) => category === "すべて" || p.category === category)
+    .filter((p) => categoryId === "all" || p.categoryId === categoryId)
     .filter((p) => {
       const q = query.toLowerCase();
       if (!q) return true;
@@ -46,9 +48,12 @@ export function BulletinPage() {
         />
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        {categories.map((c) => (
-          <button key={c} onClick={() => setCategory(c)} disabled={c === category}>
-            {c}
+        <button onClick={() => setCategoryId("all")} disabled={categoryId === "all"}>
+          すべて
+        </button>
+        {mockBulletinCategories.map((c) => (
+          <button key={c.categoryId} onClick={() => setCategoryId(c.categoryId)} disabled={c.categoryId === categoryId}>
+            {c.name}
           </button>
         ))}
       </div>
@@ -60,8 +65,8 @@ export function BulletinPage() {
           <li key={p.postId} style={{ padding: "12px 0", borderBottom: `1px solid ${colors.surface}` }}>
             <Link to={`/bulletin/${p.postId}`} style={{ display: "block" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textMuted }}>
-                {p.category === "緊急連絡" && <AlertTriangle size={12} color={colors.danger} />}
-                <span>{p.category}</span>
+                {categoryName(p.categoryId) === "緊急連絡" && <AlertTriangle size={12} color={colors.danger} />}
+                <span>{categoryName(p.categoryId)}</span>
                 <span>・{p.createdAt.slice(0, 10)}</span>
                 {p.visibleCategoryIds.length > 0 && <span>・公開範囲限定</span>}
               </div>

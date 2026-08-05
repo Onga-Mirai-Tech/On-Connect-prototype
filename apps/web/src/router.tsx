@@ -11,9 +11,12 @@ import { BulletinPage } from "./pages/BulletinPage";
 import { BulletinDetailPage } from "./pages/BulletinDetailPage";
 import { BulletinEditPage } from "./pages/BulletinEditPage";
 import { CalendarPage } from "./pages/CalendarPage";
+import { CalendarEventEditPage } from "./pages/CalendarEventEditPage";
+import { CalendarDetailPage } from "./pages/CalendarDetailPage";
 import { LinksPage } from "./pages/LinksPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AdminPage } from "./pages/AdminPage";
+import { ShiftManagementPage } from "./pages/ShiftManagementPage";
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
@@ -33,6 +36,10 @@ export const router = createBrowserRouter([
       { path: "bulletin/:postId", element: <BulletinDetailPage /> },
       { path: "bulletin/:postId/edit", element: <BulletinEditPage /> },
       { path: "calendar", element: <CalendarPage /> },
+      { path: "calendar/new", element: <CalendarEventEditPage /> },
+      { path: "calendar/:eventId", element: <CalendarDetailPage /> },
+      { path: "calendar/:eventId/edit", element: <CalendarEventEditPage /> },
+      { path: "shift-management", element: <ShiftManagementPage /> },
       { path: "links", element: <LinksPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "admin", element: <AdminPage /> },

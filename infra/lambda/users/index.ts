@@ -1,19 +1,31 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { GetCommand, PutCommand, ScanCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
-import type { MemberCategory, Role, User } from "@on-connect/shared";
+import type { MemberCategory, Role, RolePermissions, User } from "@on-connect/shared";
 import { requirePermission } from "../common/authz";
-import { docClient } from "../common/dynamo";
+import { docClient, isTableEmpty } from "../common/dynamo";
 import { HttpError, getCurrentUserId, handleRequest, jsonResponse, parseJsonBody, requireParam } from "../common/http";
 
 const USERS_TABLE_NAME = process.env.USERS_TABLE_NAME!;
 const ROLES_TABLE_NAME = process.env.ROLES_TABLE_NAME!;
 const MEMBER_CATEGORIES_TABLE_NAME = process.env.MEMBER_CATEGORIES_TABLE_NAME!;
 
+const ALL_PERMISSIONS_OFF: RolePermissions = {
+  manageUsers: false,
+  sendForceNotify: false,
+  manageBulletinCategories: false,
+  manageOrgLinks: false,
+  manageRoles: false,
+  manageMemberCategories: false,
+  manageCalendarCategories: false,
+  manageShifts: false,
+};
+
 /**
  * ユーザー・ロール・メンバーカテゴリ管理API（設計書5.1）。
  * API Gatewayでは /users, /roles, /member-categories の3リソースがすべてこのLambdaに
  * ルーティングされる（それぞれUsers/Roles/MemberCategoriesテーブルへの読み書き権限は付与済み）。
+ * 権限（RolePermissions）はロールではなくUserレコード自体が個別に持つ。Roleは表示用の名前ラベルのみ。
  */
 export const handler: APIGatewayProxyHandler = async (event) =>
   handleRequest(async () => {
@@ -72,7 +84,7 @@ async function createUser(event: APIGatewayProxyEvent) {
   // Usersテーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで最初の1人を作成できる。
   // それ以外は管理者(manageUsers権限)のみが新規ユーザーを作成できる。
   if (!(await isTableEmpty(USERS_TABLE_NAME))) {
-    await requirePermission(event, "manageUsers", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+    await requirePermission(event, "manageUsers", USERS_TABLE_NAME);
   }
 
   const input = parseJsonBody<User>(event);
@@ -92,6 +104,7 @@ async function createUser(event: APIGatewayProxyEvent) {
     roleId: input.roleId,
     memberCategoryId: input.memberCategoryId,
     notificationStatus: input.notificationStatus ?? "ON",
+    permissions: input.permissions ?? ALL_PERMISSIONS_OFF,
     ...(input.className ? { className: input.className } : {}),
   };
 
@@ -105,15 +118,15 @@ async function updateUser(userId: string, event: APIGatewayProxyEvent) {
   if (!current) throw new HttpError(404, "ユーザーが見つかりません");
 
   // 自分自身の通知ON/OFF切り替え（設計書5.1.2）だけは、管理者権限が無くても本人が行える。
-  // それ以外（他人の更新、自分のロール/カテゴリ変更等）はmanageUsers権限が必要。
+  // それ以外（自分・他人問わず権限の変更、他人の情報の更新等）はmanageUsers権限が必要。
   const isSelf = getCurrentUserId(event) === userId;
   const isSelfNotificationToggleOnly = isSelf && Object.keys(input).every((key) => key === "notificationStatus");
   if (!isSelfNotificationToggleOnly) {
-    await requirePermission(event, "manageUsers", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+    await requirePermission(event, "manageUsers", USERS_TABLE_NAME);
   }
 
-  if (input.roleId && input.roleId !== current.roleId) {
-    await assertNotRemovingLastAdmin(current, input.roleId);
+  if (input.permissions) {
+    await assertNotRemovingLastAdmin(current, input.permissions);
   }
 
   const updated: User = {
@@ -127,12 +140,14 @@ async function updateUser(userId: string, event: APIGatewayProxyEvent) {
 }
 
 async function deleteUser(userId: string, event: APIGatewayProxyEvent) {
-  await requirePermission(event, "manageUsers", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  await requirePermission(event, "manageUsers", USERS_TABLE_NAME);
 
   const current = await fetchUser(userId);
   if (!current) throw new HttpError(404, "ユーザーが見つかりません");
 
-  await assertNotRemovingLastAdmin(current, undefined);
+  if (current.permissions.manageUsers && (await countUsersWithManageUsers(current.userId)) === 0) {
+    throw new HttpError(409, "最後の1名の管理者を削除することはできません");
+  }
 
   await docClient.send(new DeleteCommand({ TableName: USERS_TABLE_NAME, Key: { userId } }));
   return jsonResponse(204, {});
@@ -144,7 +159,7 @@ async function fetchUser(userId: string): Promise<User | undefined> {
 }
 
 // ---------------------------------------------------------------------------
-// Roles
+// Roles（権限は持たない、名前だけの表示ラベル）
 // ---------------------------------------------------------------------------
 
 async function listRoles() {
@@ -161,48 +176,35 @@ async function getRole(roleId: string) {
 async function createRole(event: APIGatewayProxyEvent) {
   // Rolesテーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで最初のロールを作成できる。
   if (!(await isTableEmpty(ROLES_TABLE_NAME))) {
-    await requirePermission(event, "manageRoles", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+    await requirePermission(event, "manageRoles", USERS_TABLE_NAME);
   }
 
   const input = parseJsonBody<Omit<Role, "roleId"> & { roleId?: string }>(event);
   if (!input.name) throw new HttpError(400, "name は必須です");
-  if (!input.permissions) throw new HttpError(400, "permissions は必須です");
 
   const roleId = input.roleId ?? randomId("role");
   const existing = await fetchRole(roleId);
   if (existing) throw new HttpError(409, "このroleIdは既に登録されています");
 
-  const role: Role = { roleId, name: input.name, permissions: input.permissions };
+  const role: Role = { roleId, name: input.name };
   await docClient.send(new PutCommand({ TableName: ROLES_TABLE_NAME, Item: role }));
   return jsonResponse(201, role);
 }
 
 async function updateRole(roleId: string, event: APIGatewayProxyEvent) {
-  await requirePermission(event, "manageRoles", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  await requirePermission(event, "manageRoles", USERS_TABLE_NAME);
 
   const input = parseJsonBody<Partial<Role>>(event);
   const current = await fetchRole(roleId);
   if (!current) throw new HttpError(404, "ロールが見つかりません");
 
-  // manageUsers権限を剥奪しようとしている場合、それが最後の管理者ロールでないか確認する。
-  if (input.permissions && current.permissions.manageUsers && !input.permissions.manageUsers) {
-    // このロール以外でmanageUsers権限を持つユーザー数。0人なら他に管理者がいないため拒否する。
-    const otherAdminCount = await countUsersWithManageUsersRole(roleId);
-    if (otherAdminCount === 0) {
-      throw new HttpError(
-        409,
-        "このロールの管理者権限を外すと管理者が0人になるため変更できません",
-      );
-    }
-  }
-
-  const updated: Role = { ...current, ...input, roleId };
+  const updated: Role = { ...current, name: input.name ?? current.name, roleId };
   await docClient.send(new PutCommand({ TableName: ROLES_TABLE_NAME, Item: updated }));
   return jsonResponse(200, updated);
 }
 
 async function deleteRole(roleId: string, event: APIGatewayProxyEvent) {
-  await requirePermission(event, "manageRoles", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  await requirePermission(event, "manageRoles", USERS_TABLE_NAME);
 
   const current = await fetchRole(roleId);
   if (!current) throw new HttpError(404, "ロールが見つかりません");
@@ -246,7 +248,7 @@ async function getMemberCategory(categoryId: string) {
 async function createMemberCategory(event: APIGatewayProxyEvent) {
   // MemberCategoriesテーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで作成できる。
   if (!(await isTableEmpty(MEMBER_CATEGORIES_TABLE_NAME))) {
-    await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+    await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME);
   }
 
   const input = parseJsonBody<Omit<MemberCategory, "categoryId"> & { categoryId?: string }>(event);
@@ -262,7 +264,7 @@ async function createMemberCategory(event: APIGatewayProxyEvent) {
 }
 
 async function updateMemberCategory(categoryId: string, event: APIGatewayProxyEvent) {
-  await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME);
 
   const input = parseJsonBody<Partial<MemberCategory>>(event);
   const current = await fetchMemberCategory(categoryId);
@@ -274,7 +276,7 @@ async function updateMemberCategory(categoryId: string, event: APIGatewayProxyEv
 }
 
 async function deleteMemberCategory(categoryId: string, event: APIGatewayProxyEvent) {
-  await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME, ROLES_TABLE_NAME);
+  await requirePermission(event, "manageMemberCategories", USERS_TABLE_NAME);
 
   const current = await fetchMemberCategory(categoryId);
   if (!current) throw new HttpError(404, "メンバーカテゴリが見つかりません");
@@ -310,50 +312,35 @@ async function fetchMemberCategory(categoryId: string): Promise<MemberCategory |
 // ---------------------------------------------------------------------------
 
 /**
- * targetUser を削除する、または targetUser のロールを newRoleId に変更することで
- * manageUsers権限を持つユーザーが0人になってしまう場合に 409 を投げる。
+ * targetUser（変更前）が現在manageUsersを持っていて、変更後の権限(newPermissions)では
+ * それを失う場合に、他に管理者が誰もいなければ409を投げる。
  */
-async function assertNotRemovingLastAdmin(targetUser: User, newRoleId: string | undefined) {
-  const currentRole = await fetchRole(targetUser.roleId);
-  const isCurrentlyAdmin = currentRole?.permissions.manageUsers ?? false;
-  if (!isCurrentlyAdmin) return; // そもそも管理者権限を持っていないため対象外
+async function assertNotRemovingLastAdmin(targetUser: User, newPermissions: RolePermissions) {
+  if (!targetUser.permissions.manageUsers) return; // そもそも管理者権限を持っていないため対象外
+  if (newPermissions.manageUsers) return; // 変更後も管理者権限を保持するため問題なし
 
-  if (newRoleId) {
-    const newRole = await fetchRole(newRoleId);
-    if (newRole?.permissions.manageUsers) return; // 変更後も管理者権限を保持するため問題なし
-  }
-
-  const remainingAdmins = await countUsersWithManageUsersRole(undefined, targetUser.userId);
-  if (remainingAdmins === 0) {
-    throw new HttpError(409, "最後の1名の管理者を削除・降格することはできません");
+  if ((await countUsersWithManageUsers(targetUser.userId)) === 0) {
+    throw new HttpError(409, "最後の1名の管理者権限を外すことはできません");
   }
 }
 
-/**
- * manageUsers権限を持つロールが割り当てられているユーザー数を数える。
- * excludeRoleId: このロールへの割り当ては管理者としてカウントしない（ロール自体の権限剥奪チェック用）
- * excludeUserId: このユーザーは管理者としてカウントしない（ユーザー削除・降格チェック用）
- */
-async function countUsersWithManageUsersRole(excludeRoleId?: string, excludeUserId?: string): Promise<number> {
-  const rolesResult = await docClient.send(new ScanCommand({ TableName: ROLES_TABLE_NAME }));
-  const adminRoleIds = new Set(
-    (rolesResult.Items as Role[] | undefined ?? [])
-      .filter((r) => r.permissions.manageUsers && r.roleId !== excludeRoleId)
-      .map((r) => r.roleId),
+/** manageUsers権限を持つユーザー数を数える（excludeUserIdは対象から除外、自分自身を除いて数える用） */
+async function countUsersWithManageUsers(excludeUserId?: string): Promise<number> {
+  const result = await docClient.send(
+    new ScanCommand({
+      TableName: USERS_TABLE_NAME,
+      FilterExpression: excludeUserId
+        ? "permissions.manageUsers = :true AND userId <> :excludeId"
+        : "permissions.manageUsers = :true",
+      ExpressionAttributeValues: excludeUserId
+        ? { ":true": true, ":excludeId": excludeUserId }
+        : { ":true": true },
+      ProjectionExpression: "userId",
+    }),
   );
-  if (adminRoleIds.size === 0) return 0;
-
-  const usersResult = await docClient.send(new ScanCommand({ TableName: USERS_TABLE_NAME }));
-  const users = (usersResult.Items as User[] | undefined) ?? [];
-  return users.filter((u) => u.userId !== excludeUserId && adminRoleIds.has(u.roleId)).length;
+  return (result.Items ?? []).length;
 }
 
 function randomId(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
-}
-
-/** 組織初期セットアップ前かどうかの判定に使う（テーブルが完全に空か）。 */
-async function isTableEmpty(tableName: string): Promise<boolean> {
-  const result = await docClient.send(new ScanCommand({ TableName: tableName, Limit: 1 }));
-  return (result.Items ?? []).length === 0;
 }

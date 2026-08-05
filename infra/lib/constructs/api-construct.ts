@@ -1,6 +1,5 @@
 import { Construct } from "constructs";
 import * as path from "path";
-import { Duration } from "aws-cdk-lib";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -16,18 +15,21 @@ export interface ApiConstructProps {
   rolesTable: dynamodb.Table;
   memberCategoriesTable: dynamodb.Table;
   bulletinPostsTable: dynamodb.Table;
-  scheduleCacheTable: dynamodb.Table;
-  orgSettingsTable: dynamodb.Table;
+  bulletinCategoriesTable: dynamodb.Table;
+  calendarEventsTable: dynamodb.Table;
+  calendarCategoriesTable: dynamodb.Table;
   orgLinksTable: dynamodb.Table;
   callLogsTable: dynamodb.Table;
+  dutyTypesTable: dynamodb.Table;
+  shiftTypesTable: dynamodb.Table;
+  memberDailyStatusTable: dynamodb.Table;
   attachmentsBucket: s3.Bucket;
 }
 
 /**
  * チャット以外の業務ロジック（ユーザー管理／掲示板／カレンダー／リンク集／通話）を扱う REST API。
  * チャットのリアルタイム部分は AppSync（ChatConstruct）が担当する。
- * カレンダーの管理・編集自体はGoogleカレンダー側で行い、アプリはキャッシュを閲覧専用で提供する
- * （外部リンク集にも同じGoogleカレンダーへの直接リンクを併設している）。
+ * カレンダーはGoogleカレンダーとは同期しない独立DB管理で、全メンバーが作成・編集できる。
  */
 export class ApiConstruct extends Construct {
   public readonly restApi: apigateway.RestApi;
@@ -102,12 +104,14 @@ export class ApiConstruct extends Construct {
       runtime: lambda.Runtime.NODEJS_24_X,
       environment: {
         BULLETIN_POSTS_TABLE_NAME: props.bulletinPostsTable.tableName,
+        BULLETIN_CATEGORIES_TABLE_NAME: props.bulletinCategoriesTable.tableName,
         ATTACHMENTS_BUCKET_NAME: props.attachmentsBucket.bucketName,
         // 閲覧者のmemberCategoryIdを引くために参照する（visibleCategoryIdsフィルタ、5.3.3）
         USERS_TABLE_NAME: props.usersTable.tableName,
       },
     });
     props.bulletinPostsTable.grantReadWriteData(bulletinFn);
+    props.bulletinCategoriesTable.grantReadWriteData(bulletinFn);
     props.attachmentsBucket.grantReadWrite(bulletinFn);
     props.usersTable.grantReadData(bulletinFn);
 
@@ -119,29 +123,43 @@ export class ApiConstruct extends Construct {
     bulletinItem.addMethod("PUT", new apigateway.LambdaIntegration(bulletinFn), authOptions);
     bulletinItem.addMethod("DELETE", new apigateway.LambdaIntegration(bulletinFn), authOptions);
 
-    // --- カレンダービュー（5.4）：Googleカレンダー閲覧専用キャッシュ ---
-    // 表示対象のカレンダーID（園の共有カレンダー）は OrgSettings テーブルに1件だけ保持し、
-    // 管理者画面（GET/PUT /calendar/config）から設定する。Google側はサービスアカウント方式を
-    // 想定し、対象カレンダーをサービスアカウントのメールアドレスに読み取り専用共有しておく。
-    const calendarFn = new lambdaNode.NodejsFunction(this, "CalendarSyncFn", {
-      entry: path.join(__dirname, "../../lambda/calendar/syncGoogleCalendar.ts"),
+    const bulletinCategoriesResource = this.restApi.root.addResource("bulletin-categories");
+    bulletinCategoriesResource.addMethod("GET", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+    bulletinCategoriesResource.addMethod("POST", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+    const bulletinCategoryItem = bulletinCategoriesResource.addResource("{categoryId}");
+    bulletinCategoryItem.addMethod("PUT", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+    bulletinCategoryItem.addMethod("DELETE", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+
+    // --- カレンダー（5.4）：独立DB管理、全メンバーが作成・編集・削除できる ---
+    const calendarFn = new lambdaNode.NodejsFunction(this, "CalendarFn", {
+      entry: path.join(__dirname, "../../lambda/calendar/crud.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
-      timeout: Duration.seconds(30),
       environment: {
-        SCHEDULE_CACHE_TABLE_NAME: props.scheduleCacheTable.tableName,
-        ORG_SETTINGS_TABLE_NAME: props.orgSettingsTable.tableName,
+        CALENDAR_EVENTS_TABLE_NAME: props.calendarEventsTable.tableName,
+        CALENDAR_CATEGORIES_TABLE_NAME: props.calendarCategoriesTable.tableName,
+        // 閲覧者のmemberCategoryIdを引くために参照する（visibleCategoryIdsフィルタ）
+        USERS_TABLE_NAME: props.usersTable.tableName,
       },
     });
-    props.scheduleCacheTable.grantReadWriteData(calendarFn);
-    props.orgSettingsTable.grantReadWriteData(calendarFn);
+    props.calendarEventsTable.grantReadWriteData(calendarFn);
+    props.calendarCategoriesTable.grantReadWriteData(calendarFn);
+    props.usersTable.grantReadData(calendarFn);
 
-    const calendarResource = this.restApi.root.addResource("calendar");
-    const eventsResource = calendarResource.addResource("events");
-    eventsResource.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
-    const calendarConfigResource = calendarResource.addResource("config");
-    calendarConfigResource.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
-    calendarConfigResource.addMethod("PUT", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    const calendarEventsResource = this.restApi.root.addResource("calendar-events");
+    calendarEventsResource.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    calendarEventsResource.addMethod("POST", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    const calendarEventItem = calendarEventsResource.addResource("{eventId}");
+    calendarEventItem.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    calendarEventItem.addMethod("PUT", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    calendarEventItem.addMethod("DELETE", new apigateway.LambdaIntegration(calendarFn), authOptions);
+
+    const calendarCategoriesResource = this.restApi.root.addResource("calendar-categories");
+    calendarCategoriesResource.addMethod("GET", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    calendarCategoriesResource.addMethod("POST", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    const calendarCategoryItem = calendarCategoriesResource.addResource("{categoryId}");
+    calendarCategoryItem.addMethod("PUT", new apigateway.LambdaIntegration(calendarFn), authOptions);
+    calendarCategoryItem.addMethod("DELETE", new apigateway.LambdaIntegration(calendarFn), authOptions);
 
     // --- 外部リンク集（5.5、カレンダーURLの直接掲載を含む） ---
     const linksFn = new lambdaNode.NodejsFunction(this, "OrgLinksFn", {
@@ -186,5 +204,44 @@ export class ApiConstruct extends Construct {
 
     const callsResource = this.restApi.root.addResource("calls");
     callsResource.addMethod("POST", new apigateway.LambdaIntegration(initiateCallFn), authOptions);
+
+    // --- 休日・当番・シフト管理：全項目manageShifts権限が必要、閲覧のみ全員に開放 ---
+    const shiftsFn = new lambdaNode.NodejsFunction(this, "ShiftsFn", {
+      entry: path.join(__dirname, "../../lambda/shifts/crud.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      environment: {
+        DUTY_TYPES_TABLE_NAME: props.dutyTypesTable.tableName,
+        SHIFT_TYPES_TABLE_NAME: props.shiftTypesTable.tableName,
+        MEMBER_DAILY_STATUS_TABLE_NAME: props.memberDailyStatusTable.tableName,
+        USERS_TABLE_NAME: props.usersTable.tableName,
+      },
+    });
+    props.dutyTypesTable.grantReadWriteData(shiftsFn);
+    props.shiftTypesTable.grantReadWriteData(shiftsFn);
+    props.memberDailyStatusTable.grantReadWriteData(shiftsFn);
+    props.usersTable.grantReadData(shiftsFn);
+
+    const dutyTypesResource = this.restApi.root.addResource("duty-types");
+    dutyTypesResource.addMethod("GET", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    dutyTypesResource.addMethod("POST", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    const dutyTypeItem = dutyTypesResource.addResource("{dutyTypeId}");
+    dutyTypeItem.addMethod("PUT", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    dutyTypeItem.addMethod("DELETE", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+
+    const shiftTypesResource = this.restApi.root.addResource("shift-types");
+    shiftTypesResource.addMethod("GET", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    shiftTypesResource.addMethod("POST", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    const shiftTypeItem = shiftTypesResource.addResource("{shiftTypeId}");
+    shiftTypeItem.addMethod("PUT", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    shiftTypeItem.addMethod("DELETE", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+
+    const memberDailyStatusResource = this.restApi.root.addResource("member-daily-status");
+    memberDailyStatusResource.addMethod("GET", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    const memberDailyStatusDate = memberDailyStatusResource.addResource("{date}");
+    const memberDailyStatusItem = memberDailyStatusDate.addResource("{userId}");
+    memberDailyStatusItem.addMethod("GET", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    memberDailyStatusItem.addMethod("PUT", new apigateway.LambdaIntegration(shiftsFn), authOptions);
+    memberDailyStatusItem.addMethod("DELETE", new apigateway.LambdaIntegration(shiftsFn), authOptions);
   }
 }

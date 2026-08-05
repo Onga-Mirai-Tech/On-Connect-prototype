@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockBulletinPosts, mockMemberCategories } from "@on-connect/shared";
+import { mockBulletinPosts, mockBulletinCategories, mockMemberCategories } from "@on-connect/shared";
 import type { BulletinStackParamList } from "../navigation/AppNavigator";
 import { HtmlEditor } from "../components/HtmlEditor";
 import { colors } from "../theme/colors";
@@ -39,7 +39,11 @@ export function BulletinEditScreen({ route, navigation }: Props) {
         onChangeText={setTitle}
         placeholder="例）夏祭り開催のお知らせ"
       />
-      <Text style={styles.label}>カテゴリー：{existingPost?.category ?? "お知らせ"}</Text>
+      <Text style={styles.label}>
+        カテゴリー：
+        {mockBulletinCategories.find((c) => c.categoryId === existingPost?.categoryId)?.name ??
+          mockBulletinCategories[0]?.name}
+      </Text>
       <Text style={styles.label}>本文</Text>
       <HtmlEditor value={body} onChange={setBody} />
       <Text style={styles.label}>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</Text>

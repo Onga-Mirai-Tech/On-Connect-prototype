@@ -4,6 +4,7 @@ import { AlertTriangle, Pencil, Send } from "lucide-react";
 import {
   mockBulletinPosts,
   mockBulletinComments,
+  mockBulletinCategories,
   mockMembers,
   mockCurrentUserId,
   toggleReaction,
@@ -14,6 +15,8 @@ import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 
 const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
+const categoryName = (categoryId: string | undefined) =>
+  mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
 
 /**
  * 掲示板詳細画面：タイトル・本文（HTML表示）・リアクション・コメントを表示する。
@@ -64,8 +67,8 @@ export function BulletinDetailPage() {
         </Link>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textMuted, margin: "8px 0" }}>
-        {post.category === "緊急連絡" && <AlertTriangle size={12} color={colors.danger} />}
-        <span>{post.category}</span>
+        {categoryName(post.categoryId) === "緊急連絡" && <AlertTriangle size={12} color={colors.danger} />}
+        <span>{categoryName(post.categoryId)}</span>
         <span>・{post.createdAt.slice(0, 10)}</span>
         {post.visibleCategoryIds.length > 0 && <span>・公開範囲限定</span>}
       </div>

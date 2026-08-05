@@ -33,6 +33,7 @@ export class OnConnectStack extends Stack {
       envName,
       messagesTable: db.messagesTable,
       usersTable: db.usersTable,
+      memberDailyStatusTable: db.memberDailyStatusTable,
       chatApiUrl: chat.api.graphqlUrl,
     });
 
@@ -50,10 +51,14 @@ export class OnConnectStack extends Stack {
       rolesTable: db.rolesTable,
       memberCategoriesTable: db.memberCategoriesTable,
       bulletinPostsTable: db.bulletinPostsTable,
-      scheduleCacheTable: db.scheduleCacheTable,
-      orgSettingsTable: db.orgSettingsTable,
+      bulletinCategoriesTable: db.bulletinCategoriesTable,
+      calendarEventsTable: db.calendarEventsTable,
+      calendarCategoriesTable: db.calendarCategoriesTable,
       orgLinksTable: db.orgLinksTable,
       callLogsTable: db.callLogsTable,
+      dutyTypesTable: db.dutyTypesTable,
+      shiftTypesTable: db.shiftTypesTable,
+      memberDailyStatusTable: db.memberDailyStatusTable,
       attachmentsBucket: storage.attachmentsBucket,
     });
 

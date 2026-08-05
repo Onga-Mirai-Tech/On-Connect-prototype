@@ -12,6 +12,7 @@ export interface SchedulerConstructProps {
   envName: string;
   messagesTable: dynamodb.Table;
   usersTable: dynamodb.Table;
+  memberDailyStatusTable: dynamodb.Table;
   chatApiUrl: string;
 }
 
@@ -89,16 +90,20 @@ export class SchedulerConstruct extends Construct {
       }),
     );
 
-    // 通知ステータスの毎朝自動リセット：毎朝7:00（Asia/Tokyo）にUsersテーブルのnotificationStatusを一律ONへ戻す
+    // 通知ステータスの毎朝自動リセット：毎朝7:00（Asia/Tokyo）に実行。
+    // 休みが今日始まる人は強制OFF、休み継続中の人は触らない（本人設定を維持）、
+    // それ以外の現在OFFの人はONに戻す（休み明けの朝は自然にこの分岐に入る）。
     this.dailyNotificationResetFn = new lambdaNode.NodejsFunction(this, "DailyNotificationResetFn", {
       entry: path.join(__dirname, "../../lambda/users/dailyNotificationReset.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
       environment: {
         USERS_TABLE_NAME: props.usersTable.tableName,
+        MEMBER_DAILY_STATUS_TABLE_NAME: props.memberDailyStatusTable.tableName,
       },
     });
     props.usersTable.grantReadWriteData(this.dailyNotificationResetFn);
+    props.memberDailyStatusTable.grantReadData(this.dailyNotificationResetFn);
     this.dailyNotificationResetFn.grantInvoke(schedulerInvocationRole);
 
     new scheduler.CfnSchedule(this, "DailyNotificationResetSchedule", {

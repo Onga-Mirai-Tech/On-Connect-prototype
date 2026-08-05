@@ -6,6 +6,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   mockBulletinPosts,
   mockBulletinComments,
+  mockBulletinCategories,
   mockMembers,
   mockCurrentUserId,
   toggleReaction,
@@ -19,6 +20,8 @@ import { colors } from "../theme/colors";
 type Props = NativeStackScreenProps<BulletinStackParamList, "BulletinDetail">;
 
 const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
+const categoryName = (categoryId: string | undefined) =>
+  mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
 
 /**
  * 掲示板詳細画面：タイトル・本文（HTML表示）・リアクション・コメントを表示する。
@@ -81,9 +84,11 @@ export function BulletinDetailScreen({ route, navigation }: Props) {
             </Pressable>
           </View>
           <View style={styles.metaRow}>
-            {post.category === "緊急連絡" && <Ionicons name="alert-circle-outline" size={12} color={colors.danger} />}
+            {categoryName(post.categoryId) === "緊急連絡" && (
+              <Ionicons name="alert-circle-outline" size={12} color={colors.danger} />
+            )}
             <Text style={styles.metaText}>
-              {post.category} ・ {post.createdAt.slice(0, 10)}
+              {categoryName(post.categoryId)} ・ {post.createdAt.slice(0, 10)}
               {post.visibleCategoryIds.length > 0 ? " ・公開範囲限定" : ""}
             </Text>
           </View>

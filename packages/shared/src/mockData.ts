@@ -1,12 +1,18 @@
 import type {
   User,
   Role,
+  RolePermissions,
   MemberCategory,
   ChatRoom,
   Message,
   BulletinPost,
   BulletinComment,
-  ScheduleCacheEvent,
+  BulletinCategory,
+  CalendarEvent,
+  CalendarCategory,
+  DutyType,
+  ShiftType,
+  MemberDailyStatus,
   OrgLink,
   Reaction,
 } from "./types";
@@ -41,8 +47,7 @@ export const toggleReaction = (reactions: Reaction[] | undefined, emoji: string,
  * バックエンド（AWS）が未接続の段階でも、メンバー一覧・チャット・掲示板・カレンダー・
  * リンク集の見え方を確認できるようにするためのモックであり、実データではない。
  * `apps/web` `apps/mobile` の各ページから直接importして表示に使う。
- * カレンダーはGoogleカレンダーで管理し、アプリ内は閲覧専用（サービスアカウント方式でキャッシュ表示）。
- * リンク集にも同じGoogleカレンダーへの直接リンクを併設している。
+ * カレンダーはGoogleカレンダーとは同期しない独立DB管理で、全メンバーが作成・編集できる。
  */
 
 /** デモ上の「ログイン中の自分」 */
@@ -56,31 +61,31 @@ export const mockMemberCategories: MemberCategory[] = [
 ];
 
 export const mockRoles: Role[] = [
-  {
-    roleId: "role-admin",
-    name: "管理者",
-    permissions: {
-      manageUsers: true,
-      sendForceNotify: true,
-      manageBulletinCategories: true,
-      manageOrgLinks: true,
-      manageRoles: true,
-      manageMemberCategories: true,
-    },
-  },
-  {
-    roleId: "role-general",
-    name: "一般メンバー",
-    permissions: {
-      manageUsers: false,
-      sendForceNotify: false,
-      manageBulletinCategories: false,
-      manageOrgLinks: false,
-      manageRoles: false,
-      manageMemberCategories: false,
-    },
-  },
+  { roleId: "role-admin", name: "管理者" },
+  { roleId: "role-general", name: "一般メンバー" },
 ];
+
+const allPermissionsOn: RolePermissions = {
+  manageUsers: true,
+  sendForceNotify: true,
+  manageBulletinCategories: true,
+  manageOrgLinks: true,
+  manageRoles: true,
+  manageMemberCategories: true,
+  manageCalendarCategories: true,
+  manageShifts: true,
+};
+
+const allPermissionsOff: RolePermissions = {
+  manageUsers: false,
+  sendForceNotify: false,
+  manageBulletinCategories: false,
+  manageOrgLinks: false,
+  manageRoles: false,
+  manageMemberCategories: false,
+  manageCalendarCategories: false,
+  manageShifts: false,
+};
 
 export const mockMembers: User[] = [
   {
@@ -91,6 +96,7 @@ export const mockMembers: User[] = [
     roleId: "role-admin",
     memberCategoryId: "cat-regular",
     notificationStatus: "ON",
+    permissions: allPermissionsOn,
   },
   {
     userId: "user-02",
@@ -100,6 +106,7 @@ export const mockMembers: User[] = [
     roleId: "role-admin",
     memberCategoryId: "cat-regular",
     notificationStatus: "ON",
+    permissions: allPermissionsOn,
   },
   {
     userId: "user-03",
@@ -109,6 +116,7 @@ export const mockMembers: User[] = [
     roleId: "role-general",
     memberCategoryId: "cat-regular",
     notificationStatus: "ON",
+    permissions: allPermissionsOff,
     className: "ひまわり組",
   },
   {
@@ -119,6 +127,7 @@ export const mockMembers: User[] = [
     roleId: "role-general",
     memberCategoryId: "cat-regular",
     notificationStatus: "OFF",
+    permissions: allPermissionsOff,
     className: "さくら組",
   },
   {
@@ -129,6 +138,7 @@ export const mockMembers: User[] = [
     roleId: "role-general",
     memberCategoryId: "cat-contract",
     notificationStatus: "ON",
+    permissions: allPermissionsOff,
     className: "たんぽぽ組",
   },
   {
@@ -139,6 +149,7 @@ export const mockMembers: User[] = [
     roleId: "role-general",
     memberCategoryId: "cat-parttime",
     notificationStatus: "OFF",
+    permissions: allPermissionsOff,
     className: "うさぎ組（延長保育）",
   },
   {
@@ -149,6 +160,7 @@ export const mockMembers: User[] = [
     roleId: "role-general",
     memberCategoryId: "cat-parttime",
     notificationStatus: "ON",
+    permissions: allPermissionsOff,
   },
   {
     userId: "user-08",
@@ -158,6 +170,7 @@ export const mockMembers: User[] = [
     roleId: "role-general",
     memberCategoryId: "cat-external",
     notificationStatus: "OFF",
+    permissions: allPermissionsOff,
   },
   {
     userId: "user-09",
@@ -167,6 +180,7 @@ export const mockMembers: User[] = [
     roleId: "role-general",
     memberCategoryId: "cat-regular",
     notificationStatus: "ON",
+    permissions: allPermissionsOff,
   },
 ];
 
@@ -182,13 +196,12 @@ export const memberMatchesQuery = (member: User, query: string): boolean => {
 
 /**
  * デモ用：「ログイン中の自分」が管理者権限を持つかどうか。
- * 本来はCognito認証後にRolesテーブルのpermissionsを参照して判定するが、
+ * 本来はCognito認証後にUsersテーブルの本人のpermissionsを参照して判定するが、
  * 認証未実装の現段階ではダミーデータから算出する（管理者タブの表示制御に使用）。
  */
 export const mockCurrentUserIsAdmin = (() => {
   const currentMember = mockMembers.find((m) => m.userId === mockCurrentUserId);
-  const role = mockRoles.find((r) => r.roleId === currentMember?.roleId);
-  return role?.permissions.manageUsers ?? false;
+  return currentMember?.permissions.manageUsers ?? false;
 })();
 
 export const mockChatRooms: ChatRoom[] = [
@@ -293,11 +306,17 @@ export const mockMessages: Record<string, Message[]> = {
   ],
 };
 
+export const mockBulletinCategories: BulletinCategory[] = [
+  { categoryId: "bc-announcement", name: "お知らせ" },
+  { categoryId: "bc-event", name: "行事" },
+  { categoryId: "bc-emergency", name: "緊急連絡" },
+];
+
 export const mockBulletinPosts: BulletinPost[] = [
   {
     postId: "post-01",
     title: "【重要】台風接近に伴う臨時休園のお知らせ",
-    category: "緊急連絡",
+    categoryId: "bc-emergency",
     body: "<p><strong>台風接近</strong>に伴い、明日8/4（火）は臨時休園といたします。</p><p>今後の予定は追ってご連絡します。</p>",
     authorId: "user-01",
     visibleCategoryIds: [],
@@ -308,7 +327,7 @@ export const mockBulletinPosts: BulletinPost[] = [
   {
     postId: "post-02",
     title: "夏祭り開催のお知らせ（ボランティア募集）",
-    category: "行事",
+    categoryId: "bc-event",
     body: "<p>8/8（土）に夏祭りを開催します。</p><p>ボランティアメンバーを募集していますので、参加可能な方はリンク集のフォームよりご回答ください。</p>",
     authorId: "user-02",
     visibleCategoryIds: [],
@@ -319,7 +338,7 @@ export const mockBulletinPosts: BulletinPost[] = [
   {
     postId: "post-03",
     title: "契約更新に関する面談のご案内",
-    category: "お知らせ",
+    categoryId: "bc-announcement",
     body: "<p>契約更新に関する面談を8月中に実施します。</p><p>対象の方には別途日程調整のご連絡をします。</p>",
     authorId: "user-01",
     visibleCategoryIds: ["cat-contract"],
@@ -329,7 +348,7 @@ export const mockBulletinPosts: BulletinPost[] = [
   {
     postId: "post-04",
     title: "定例会議 議事録の共有",
-    category: "お知らせ",
+    categoryId: "bc-announcement",
     body: "<p>定例会議の議事録を共有します。</p><ul><li>次回は8/5（水）17:30〜</li><li>会場：職員室</li></ul>",
     authorId: "user-02",
     visibleCategoryIds: ["cat-regular", "cat-contract"],
@@ -339,7 +358,7 @@ export const mockBulletinPosts: BulletinPost[] = [
   {
     postId: "post-05",
     title: "運動会開催のお知らせ（9/20）",
-    category: "行事",
+    categoryId: "bc-event",
     body: "<p>運動会は9/20（日）を予定しています。</p><p>会場設営の詳細は追ってお知らせします。</p>",
     authorId: "user-01",
     visibleCategoryIds: [],
@@ -372,47 +391,131 @@ export const mockBulletinComments: BulletinComment[] = [
   },
 ];
 
-export const mockScheduleCacheEvents: ScheduleCacheEvent[] = [
+export const mockCalendarCategories: CalendarCategory[] = [
+  { categoryId: "cc-meeting", name: "会議" },
+  { categoryId: "cc-event", name: "行事" },
+  { categoryId: "cc-personal", name: "個人予定" },
+];
+
+export const mockCalendarEvents: CalendarEvent[] = [
   {
     eventId: "evt-01",
-    calendarId: "kindergarten-shared",
     title: "定例会議",
+    categoryId: "cc-meeting",
     startAt: "2026-08-05T17:30:00+09:00",
     endAt: "2026-08-05T18:30:00+09:00",
+    visibleCategoryIds: [],
+    authorId: "user-01",
+    createdAt: "2026-07-20T09:00:00+09:00",
+    updatedAt: "2026-07-20T09:00:00+09:00",
   },
   {
     eventId: "evt-02",
-    calendarId: "kindergarten-shared",
     title: "夏祭り",
+    categoryId: "cc-event",
     startAt: "2026-08-08T10:00:00+09:00",
     endAt: "2026-08-08T14:00:00+09:00",
+    visibleCategoryIds: [],
+    authorId: "user-02",
+    createdAt: "2026-07-20T09:00:00+09:00",
+    updatedAt: "2026-07-20T09:00:00+09:00",
   },
   {
     eventId: "evt-03",
-    calendarId: "kindergarten-shared",
     title: "保護者面談週間",
+    description: "対象は契約職員の方のみです。",
+    categoryId: "cc-event",
     startAt: "2026-08-12T09:00:00+09:00",
     endAt: "2026-08-14T17:00:00+09:00",
+    visibleCategoryIds: ["cat-contract"],
+    authorId: "user-01",
+    createdAt: "2026-07-20T09:00:00+09:00",
+    updatedAt: "2026-07-20T09:00:00+09:00",
   },
   {
     eventId: "evt-04",
-    calendarId: "kindergarten-shared",
     title: "運動会",
+    categoryId: "cc-event",
     startAt: "2026-09-20T09:00:00+09:00",
     endAt: "2026-09-20T13:00:00+09:00",
+    visibleCategoryIds: [],
+    authorId: "user-01",
+    createdAt: "2026-07-15T09:00:00+09:00",
+    updatedAt: "2026-07-15T09:00:00+09:00",
+  },
+];
+
+export const mockDutyTypes: DutyType[] = [
+  { dutyTypeId: "duty-hayade", name: "早出", isActive: true },
+  { dutyTypeId: "duty-nitchoku", name: "日直", isActive: true },
+  { dutyTypeId: "duty-1f-mimamori", name: "1F見守", isActive: true },
+  { dutyTypeId: "duty-2f-mimamori", name: "2F見守", isActive: true },
+  { dutyTypeId: "duty-genkan", name: "玄関受入", isActive: true },
+];
+
+export const mockShiftTypes: ShiftType[] = [
+  { shiftTypeId: "shift-early", name: "早番", isActive: true },
+  { shiftTypeId: "shift-late", name: "遅番", isActive: true },
+  { shiftTypeId: "shift-day", name: "日勤", isActive: true },
+];
+
+/** 休日・当番・シフトのメンバー別・日別記録（管理者=manageShifts権限を持つ人のみ編集） */
+export const mockMemberDailyStatuses: MemberDailyStatus[] = [
+  {
+    date: "2026-08-04",
+    userId: "user-04",
+    leaveType: "FULL",
+    leaveReason: "ASSIGNED",
+    updatedAt: "2026-07-20T09:00:00+09:00",
+    updatedBy: "user-01",
+  },
+  {
+    date: "2026-08-05",
+    userId: "user-05",
+    leaveType: "AM",
+    leaveReason: "REQUESTED",
+    updatedAt: "2026-07-25T09:00:00+09:00",
+    updatedBy: "user-01",
+  },
+  {
+    date: "2026-08-05",
+    userId: "user-06",
+    amShiftTypeId: "shift-early",
+    leaveType: "PM",
+    leaveReason: "REQUESTED",
+    updatedAt: "2026-07-25T09:00:00+09:00",
+    updatedBy: "user-01",
+  },
+  {
+    date: "2026-08-05",
+    userId: "user-07",
+    amShiftTypeId: "shift-day",
+    pmShiftTypeId: "shift-day",
+    dutyTypeIds: ["duty-nitchoku"],
+    updatedAt: "2026-07-25T09:00:00+09:00",
+    updatedBy: "user-02",
+  },
+  {
+    date: "2026-08-05",
+    userId: "user-08",
+    amShiftTypeId: "shift-day",
+    pmShiftTypeId: "shift-day",
+    dutyTypeIds: ["duty-1f-mimamori"],
+    updatedAt: "2026-07-25T09:00:00+09:00",
+    updatedBy: "user-02",
+  },
+  {
+    date: "2026-08-05",
+    userId: "user-09",
+    amShiftTypeId: "shift-day",
+    pmShiftTypeId: "shift-day",
+    dutyTypeIds: ["duty-1f-mimamori"],
+    updatedAt: "2026-07-25T09:00:00+09:00",
+    updatedBy: "user-02",
   },
 ];
 
 export const mockOrgLinks: OrgLink[] = [
-  {
-    linkId: "link-00",
-    title: "園の共有カレンダー",
-    url: "https://calendar.google.com/calendar/embed?src=kindergarten-shared%40group.calendar.google.com",
-    category: "カレンダー",
-    sortOrder: 0,
-    createdBy: "user-01",
-    updatedAt: "2026-08-03T09:00:00+09:00",
-  },
   {
     linkId: "link-01",
     title: "休暇申請フォーム",
