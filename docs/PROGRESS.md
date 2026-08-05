@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 6完了＝計画6フェーズ全完了）
+# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 7完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -11,11 +11,16 @@
 
 ## 0. まず読むべきこと（最優先・今回のセッションの要約）
 
-直近のセッションで、当初の「Users/Roles/MemberCategories CRUD実装」から大きく発展し、
+当初の「Users/Roles/MemberCategories CRUD実装」から大きく発展し、
 **大規模な機能拡張（権限モデルの再設計＋カレンダー独立DB化＋休日/当番/シフト管理）**を
 6フェーズに分けて計画・実装した。詳細な設計議論と各フェーズの内容は
 **実装計画ファイル `/Users/ikkounobuyuki/.claude/plans/elegant-wobbling-lollipop.md` に記録済み**
-（Plan modeで作成したもの。Context・全6フェーズの変更ファイル一覧が載っている）。
+（Plan modeで作成したもの。Context・全6フェーズの変更ファイル一覧が載っている。Phase1〜6は全て完了済み）。
+
+その後、カレンダーのUI改善（月表示・週表示対応、Phase 7）を追加実装。あわせてこれまでの議論で
+当初計画から大きく発展した内容を整理し、残っている作業をPhase 8〜12として再洗い出しした
+（**Phase 7の技術方針＋Phase 8〜12のロードマップは
+`/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md` に記録済み**）。
 
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
@@ -28,15 +33,23 @@
   （詳細は下記3章27.参照）
 - **Phase 6（カレンダーの個別予定`.ics`エクスポート＋リマインド）**：完了・web/mobile双方で
   ブラウザ/型チェック確認済み（詳細は下記3章28.参照）。**これで実装計画ファイルの全6フェーズが完了**
+- **Phase 7（カレンダー月表示・週表示対応）**：完了・web/mobile双方でブラウザ/型チェック確認済み
+  （詳細は下記3章29.参照）。当初「Googleカレンダーへのリンクのみ」という設計だったためリスト表示
+  しか計画されていなかったが、独立DB化（Phase 2）で前提が変わったため今回対応した
 
-### 未着手のフェーズ
-無し（計画ファイルの6フェーズは全て完了。今後の候補は8章「次にやりそうなこと」参照）
+### 未着手のフェーズ（Phase 8〜12、優先順に記載。詳細は8章参照）
+- **Phase 8: Cognito認証・AppSyncクライアント接続**（最優先・最大規模。他の全フェーズが実質的にこれに依存）
+- **Phase 9: リアクション/コメントの永続化**（Phase 8後）
+- **Phase 10: 予約送信の実スケジューリング**（Phase 8後、既存インフラの実地検証が中心）
+- **Phase 11: Amazon Chime SDK音声通話実装**（Phase 8後、実機検証にAWSデプロイが必要）
+- **Phase 12: 実際のモバイルプッシュ配信**（Phase 8後）
 
 ### 現在のコミット状況
 Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
-Phase 5（3章27.）は**コミット済み・未push**（`git log`で確認すること。コミットハッシュ`573cfe9`まで）。
-**Phase 6（3章28.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
-次回セッション開始時は`git status`で確認し、必要ならユーザーに確認の上コミットすること。
+Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**（`git log`で確認すること。
+コミットハッシュ`bffbaf8`まで）。**Phase 7（3章29.）の変更は、本セッション終了時点でまだ未コミット**
+（作業ツリーに残っている）。次回セッション開始時は`git status`で確認し、必要ならユーザーに確認の上
+コミットすること。
 
 ### AWSデプロイの状況
 **Phase 1〜3の変更はAWSにデプロイされていない**（ローカルの`npm test`・`cdk synth`のみで確認）。
@@ -234,6 +247,35 @@ Phase 5（3章27.）は**コミット済み・未push**（`git log`で確認す�
       `infra/test/lambda/calendar.test.ts`に`ical`エンドポイントのテスト3件
       （200・text/calendarヘッダー確認、閲覧権限無し403、予定無し404）を追加。
       プロジェクト全体で96件、全green。`cdk synth`でスケジュール・VTL含め構文確認済み
+29. **【Phase 7】カレンダー月表示・週表示対応**：ユーザーからの修正依頼で対応
+    （元々「Googleカレンダーのリンクを掲示するだけ」という設計だったためリスト表示のみで計画していたが、
+    独立DB化＝Phase2で前提が変わったのにUIが据え置きだったため）。
+    - 新規`packages/shared/src/calendarGrid.ts`：`toDateKey`/`parseDateKey`/`addDays`/`addMonths`/
+      `startOfWeek`/`buildMonthGrid`（6週×7日=42マス固定、前後月パディング込み）/`buildWeekDays`/
+      `eventsOnDate`（複数日イベントは該当する全日にマッチする）という純粋関数群。Lambdaからは
+      importされないためPhase6のholiday-jpバンドル肥大化問題は起きない（念のため依存させていない）
+    - Web `CalendarPage.tsx`/Mobile `CalendarScreen.tsx`を書き換え、`viewMode`
+      （`"month" | "week" | "list"`、デフォルト`"month"`）と`refDate`（月表示・週表示共通のアンカー日付）
+      をローカルstateで管理。表示モード切り替え・prev/next月/週移動はURLを使わずコンポーネント内状態のみ
+      （ShiftManagementPageの月ナビゲーションと同じ考え方）
+    - Web：月表示はCSS Grid 7列×6行、日付セルに予定チップ（最大3件+overflow件数）、セルクリックで
+      その日を含む週表示へドリルダウン、チップクリックで予定詳細へ。週表示は7列グリッドで各日に
+      予定のタイトル・時刻を表示。曜日・祝日の色分けはShiftManagementPageと同じくインラインロジック
+      （日曜/祝日=`colors.danger`、土曜=`colors.brandDark`）で`packages/shared`には出していない
+    - Mobile：画面幅の制約から月表示・週表示ともWebとは異なるレイアウトを採用。月表示はタイトル文字を
+      表示せずドット（最大3つ+overflow表示）のみ、セルタップで週表示へドリルダウン。週表示は7列グリッド
+      ではなく縦積みのアジェンダ形式（曜日・日付・祝日名の見出し→その日の予定を既存リスト行スタイルで
+      表示、を7日分繰り返す）
+    - リスト表示は既存の挙動（`endAt >= now`で未来の予定のみ、`startAt`昇順）を変更せず維持。
+      「＋ 予定を追加」ボタンは表示モードによらず常時表示
+    - バックエンド変更無し（`GET /calendar-events`は既にサーバー側で閲覧権限フィルタ済みの全件を
+      返しており、月表示・週表示のレンダリングに必要なデータは揃っている）
+    - テスト：`npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）で型エラー無しを確認。
+      ブラウザで月表示（2026年8月、複数日イベントevt-03が8/12〜14の全日に正しく表示、当番8/6ハイライト、
+      日祝の色分け）→週表示（8/2〜8/8、時刻付きで表示）→リスト表示（未来の予定のみ）の切り替え、
+      日付セルクリックでの週表示ドリルダウン、予定チップクリックでの詳細画面遷移を実際に動かして確認済み。
+      packages/sharedにはテストランナーが無い既存方針を踏襲し、`calendarGrid.ts`自体の自動テストは
+      追加していない（ブラウザでの動作確認で代替）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -293,6 +335,7 @@ Phase 5（3章27.）は**コミット済み・未push**（`git log`で確認す�
 | 設計企画書（オリジナル） | `docs/DESIGN.md` |
 | 本ファイル | `docs/PROGRESS.md` |
 | **実装計画（Phase1〜6の詳細、変更ファイル一覧）** | `/Users/ikkounobuyuki/.claude/plans/elegant-wobbling-lollipop.md` |
+| **実装計画（Phase7の技術方針＋Phase8〜12ロードマップ）** | `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md` |
 | 共有ドメイン型定義 | `packages/shared/src/types.ts` |
 | ダミーデータ・検索/リアクションヘルパー | `packages/shared/src/mockData.ts` |
 | CDKスタック本体 | `infra/lib/on-connect-stack.ts` |
@@ -313,26 +356,56 @@ Phase 5（3章27.）は**コミット済み・未push**（`git log`で確認す�
 | Web: 共通レイアウト・ヘッダー・下部タブ（4タブ：チャット/掲示板/カレンダー/メニュー） | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: メニュー画面（メンバー/シフト管理/リンク集/個人設定/管理者設定への導線） | `apps/web/src/pages/MenuPage.tsx` |
 | Web: 管理者設定（ユーザー権限編集・各種カテゴリー管理） | `apps/web/src/pages/AdminPage.tsx` |
-| Web: カレンダー一覧/詳細（`.ics`エクスポート含む）/編集 | `apps/web/src/pages/Calendar{Page,DetailPage,EventEditPage}.tsx` |
+| Web: カレンダー一覧（月/週/リスト表示）/詳細（`.ics`エクスポート含む）/編集 | `apps/web/src/pages/Calendar{Page,DetailPage,EventEditPage}.tsx` |
 | Web: シフト管理（月間グリッド） | `apps/web/src/pages/ShiftManagementPage.tsx` |
 | Web: チャット詳細（`@`メンション対応） | `apps/web/src/pages/ChatRoomPage.tsx` |
 | Web/Mobile: メンバー検索・選択の共通コンポーネント | `apps/web/src/components/MemberPicker.tsx` / `apps/mobile/src/components/MemberPicker.tsx` |
 | iCalendar(.ics)生成の共通純粋関数（Lambda/Web/Mobileで共通利用） | `packages/shared/src/ics.ts` |
+| カレンダー月/週グリッド構築の共通純粋関数（Web/Mobileで共通利用、Lambdaは未使用） | `packages/shared/src/calendarGrid.ts` |
 | Mobile: ナビゲーション定義（4タブ＋MenuStackNavigator） | `apps/mobile/src/navigation/AppNavigator.tsx` |
 | Mobile: メニュー画面（メンバー/シフト管理/リンク集/個人設定への導線） | `apps/mobile/src/screens/MenuScreen.tsx` |
-| Mobile: カレンダー一覧/詳細（`.ics`エクスポート含む）/編集 | `apps/mobile/src/screens/Calendar{Screen,DetailScreen,EventEditScreen}.tsx` |
+| Mobile: カレンダー一覧（月/週/リスト表示）/詳細（`.ics`エクスポート含む）/編集 | `apps/mobile/src/screens/Calendar{Screen,DetailScreen,EventEditScreen}.tsx` |
 | Mobile: シフト管理（月間グリッド、MenuStackNavigator配下） | `apps/mobile/src/screens/ShiftManagementScreen.tsx` |
 | Mobile: チャット詳細（`@`メンション対応） | `apps/mobile/src/screens/ChatRoomScreen.tsx` |
 | ブランドアイコン生成スクリプト／画像 | `scripts/generate-brand-icon.py` / `assets/brand/*.png` |
 
-## 8. 次にやりそうなこと（候補、優先度順ではない。計画ファイルの6フェーズは全て完了済み）
+## 8. 今後のロードマップ（Phase 8〜12）
 
-- リアクション/コメントの永続化、`notifyOnPost.ts`の実装（掲示板側は引き続きスタブのまま）
-- 予約送信の実スケジューリング
-- Cognito認証・AppSyncクライアント接続（チャット機能をバックエンドに繋ぐ）
-- Mobileをシミュレータ/実機で見た目確認
-- 通知音の仕様確定
-- Amazon Chime SDKの音声通話実装
+計画ファイルの元々の6フェーズ＋Phase7は完了済み。ここからは残っている大物5点をPhase 8〜12として
+再整理したもの（詳細版は
+`/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`のパートB参照）。
+**Phase 8が他の全フェーズを実質的にブロックする**ため最優先。Phase 9〜12はPhase 8完了後であれば
+互いに強い依存関係は無く、着手順はユーザーの優先度判断で決めてよい。
+
+- **Phase 8: Cognito認証・AppSyncクライアント接続**（最優先・最大規模）
+  ダミーのログイン画面を実際のCognito認証に置き換え、web/mobileほぼ全画面が参照している
+  `mockCurrentUserId`を実際の認証ユーザーIDに置き換える。チャットはAppSyncクライアント
+  （sendMessage/markMessageRead/listMessagesForRoom/Subscription）に、それ以外のCRUD
+  （users/bulletin/calendar/links/shifts）はREST APIクライアント（CognitoのIDトークンをBearerで送る）
+  に接続する。影響範囲が非常に広いため、着手時は「8a: 認証基盤」「8b: REST 1リソースだけ疎通確認」
+  「8c: 残りのリソースへ展開」「8d: チャットのAppSync接続」のようにさらに細分化することを推奨
+- **Phase 9: リアクション/コメントの永続化**（Phase 8後）
+  掲示板コメント用の新規DynamoDBテーブル・CRUD Lambdaを追加し、ローカルstateのみの
+  `toggleReaction`等をAPI接続に置き換える。`bulletin/notifyOnPost.ts`（現状`console.log`のみの
+  スタブ）の実装もここに含める。投稿者・リアクションした人の識別に実ユーザーIDが要るためPhase 8後
+- **Phase 10: 予約送信の実スケジューリング**（Phase 8後）
+  `onMessageStreamChange.ts`（Streams→EventBridge Scheduler登録）・`sendScheduled.ts`
+  （実際の送信）は実装済みだがチャット未接続のため一度も実地検証されていない。Phase 8後にAppSync
+  経由の実メッセージで動作確認し、見つかったバグを直す作業が中心になる見込み
+- **Phase 11: Amazon Chime SDK音声通話実装**
+  現状デモの着信画面遷移のみの`initiateCall.ts`を、Chime SDK Meetings API
+  （CreateMeeting/CreateAttendee）を呼ぶ実装に差し替え、web/mobileにChime SDKクライアントを
+  組み込む。Attendeeとユーザーの紐付けに実ユーザーIDが要るためPhase 8後が望ましい。
+  音声ストリームはローカルでは検証できないため、着手時にAWSデプロイの是非をユーザーに確認すること
+  （Phase1〜7は全てローカル`npm test`/`cdk synth`のみで確認してきた）
+- **Phase 12: 実際のモバイルプッシュ配信**
+  SNSトピックへのpublishはPhase5・6で実装済み。不足しているのはAPNs/FCM向けのSNS Platform
+  Application、デバイストークンの登録エンドポイント（`expo-notifications`は
+  `apps/mobile/package.json`に導入済み・未使用）、ユーザーID⇔デバイストークンの紐付け。Phase 8後
+
+### その他の細かい未着手事項
+- Mobileをシミュレータ/実機で見た目確認（このセッションではtscのみで確認、実機目視は未実施）
+- 通知音の仕様確定（未着手・要検討事項、6章参照）
 
 ## 9. Phase 3 追加要望（対応完了、25.参照）
 
