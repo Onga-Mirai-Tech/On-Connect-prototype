@@ -9,6 +9,12 @@ export interface AuthConstructProps {
 /**
  * ユーザー認証（5.1.1）＋ ロールの大まかな括り（5.1.3）
  * 詳細な権限フラグは DynamoDB Roles テーブル側で管理する。
+ *
+ * 小規模事業者ではメンバー個人にメールアドレスを配布していないことが多いため、
+ * メールアドレスを必須にしない（`signInAliases`未指定＝Cognitoのusernameでログインする）。
+ * これに伴い、`accountRecovery`もメール送信を前提とするEMAIL_ONLYではなくNONEとし、
+ * パスワード再設定は管理者が`AdminSetUserPassword`等で行う運用にする
+ * （`selfSignUpEnabled: false`で元々アカウント作成自体が管理者操作前提のため、一貫した設計）。
  */
 export class AuthConstruct extends Construct {
   public readonly userPool: cognito.UserPool;
@@ -22,7 +28,7 @@ export class AuthConstruct extends Construct {
     this.userPool = new cognito.UserPool(this, "UserPool", {
       userPoolName: `on-connect-${props.envName}`,
       selfSignUpEnabled: false,
-      signInAliases: { email: true },
+      // signInAliasesを指定しない＝メールアドレス不要。ログインはCognitoのusername（管理者が付与するログインID）で行う
       standardAttributes: {
         fullname: { required: true, mutable: true },
       },
@@ -35,7 +41,7 @@ export class AuthConstruct extends Construct {
       },
       mfa: cognito.Mfa.OPTIONAL,
       mfaSecondFactor: { sms: false, otp: true },
-      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      accountRecovery: cognito.AccountRecovery.NONE,
       removalPolicy: RemovalPolicy.RETAIN,
     });
 

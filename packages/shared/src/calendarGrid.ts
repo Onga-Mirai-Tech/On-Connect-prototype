@@ -24,10 +24,11 @@ export function addMonths(key: string, delta: number): string {
   return toDateKey(d);
 }
 
-/** その日を含む週の日曜日（週の始まり）を返す */
+/** その日を含む週の月曜日（週の始まり）を返す */
 export function startOfWeek(key: string): string {
   const d = parseDateKey(key);
-  d.setDate(d.getDate() - d.getDay());
+  const diffFromMonday = (d.getDay() + 6) % 7; // getDay()は日曜=0のため、月曜始まりに補正
+  d.setDate(d.getDate() - diffFromMonday);
   return toDateKey(d);
 }
 
@@ -37,7 +38,7 @@ export interface MonthGridDay {
 }
 
 /**
- * 月表示カレンダー用のグリッドを組み立てる（日曜始まり、6週×7日=42マス固定）。
+ * 月表示カレンダー用のグリッドを組み立てる（月曜始まり、6週×7日=42マス固定）。
  * 前後月の日付でパディングすることで、月をまたいでも表示の高さが揺れない。
  */
 export function buildMonthGrid(year: number, month: number): MonthGridDay[][] {

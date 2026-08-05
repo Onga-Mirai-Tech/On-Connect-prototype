@@ -127,13 +127,13 @@ function MonthGrid({
   onSelectDay: (dateKey: string) => void;
 }) {
   const weeks = buildMonthGrid(year, month);
-  const weekdayHeaders = ["日", "月", "火", "水", "木", "金", "土"];
+  const weekdayHeaders = ["月", "火", "水", "木", "金", "土", "日"];
 
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", textAlign: "center", fontSize: 12, marginBottom: 4 }}>
         {weekdayHeaders.map((w, i) => (
-          <div key={w} style={{ color: i === 0 ? colors.danger : i === 6 ? colors.brandDark : colors.textMuted }}>
+          <div key={w} style={{ color: i === 5 ? colors.brandDark : i === 6 ? colors.danger : colors.textMuted }}>
             {w}
           </div>
         ))}
