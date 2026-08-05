@@ -71,6 +71,8 @@ export interface Message {
   scheduledAt?: string;
   /** 緊急通知フラグ：通知OFFのユーザーにも強制配信する（音声通話には適用しない） */
   forceNotify: boolean;
+  /** グループチャットでのメンション先。指定時は名指しされた人にのみ通知が届く（forceNotifyが優先） */
+  mentionedUserIds?: string[];
   reactions?: Reaction[];
   createdAt: string;
 }

@@ -10,6 +10,7 @@ import { StartingPosition } from "aws-cdk-lib/aws-lambda";
 export interface NotificationConstructProps {
   envName: string;
   usersTable: dynamodb.Table;
+  chatRoomsTable: dynamodb.Table;
   messagesTable: dynamodb.Table;
   bulletinPostsTable: dynamodb.Table;
 }
@@ -38,10 +39,12 @@ export class NotificationConstruct extends Construct {
       runtime: lambda.Runtime.NODEJS_24_X,
       environment: {
         USERS_TABLE_NAME: props.usersTable.tableName,
+        CHAT_ROOMS_TABLE_NAME: props.chatRoomsTable.tableName,
         PUSH_TOPIC_ARN: this.pushTopic.topicArn,
       },
     });
     props.usersTable.grantReadData(messagePushFn);
+    props.chatRoomsTable.grantReadData(messagePushFn);
     this.pushTopic.grantPublish(messagePushFn);
     messagePushFn.addEventSource(
       new DynamoEventSource(props.messagesTable, {

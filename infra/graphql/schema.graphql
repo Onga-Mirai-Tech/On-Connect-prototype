@@ -27,6 +27,8 @@ type Message {
   scheduledAt: AWSDateTime
   """緊急通知フラグ：通知OFFのユーザーにも強制配信する（音声通話には適用しない）"""
   forceNotify: Boolean!
+  """グループチャットでのメンション先。指定時は名指しされた人にのみ通知が届く（forceNotifyが優先）"""
+  mentionedUserIds: [ID!]
   createdAt: AWSDateTime!
 }
 
@@ -39,6 +41,8 @@ input SendMessageInput {
   scheduledAt: AWSDateTime
   """緊急通知として送信するか（管理者ロール等の限定権限、5.2.3）"""
   forceNotify: Boolean
+  """メンション先ユーザーID一覧（Phase 5）"""
+  mentionedUserIds: [ID!]
 }
 
 input MarkReadInput {

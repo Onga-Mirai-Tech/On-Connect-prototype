@@ -93,6 +93,7 @@ export class ChatConstruct extends Construct {
     "status": $util.dynamodb.toDynamoDBJson($util.isNull($ctx.args.input.scheduledAt) ? "sent" : "scheduled"),
     "scheduledAt": $util.dynamodb.toDynamoDBJson($ctx.args.input.scheduledAt),
     "forceNotify": $util.dynamodb.toDynamoDBJson($util.defaultIfNull($ctx.args.input.forceNotify, false)),
+    "mentionedUserIds": $util.dynamodb.toDynamoDBJson($util.defaultIfNull($ctx.args.input.mentionedUserIds, [])),
     "createdAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601())
   }
 }`),

@@ -13,10 +13,14 @@ import {
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
+import { MemberPicker } from "../components/MemberPicker";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatRoom">;
 
 const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
+
+/** 本文末尾の "@検索語" にマッチする（カーソルが末尾にある前提の簡易実装） */
+const mentionPattern = /@([^\s@]*)$/;
 
 /**
  * チャット詳細画面（7章 3番）
@@ -34,6 +38,19 @@ export function ChatRoomScreen({ route }: Props) {
   const [messages, setMessages] = useState<Message[]>(mockMessages[roomId] ?? []);
   const [body, setBody] = useState("");
   const [forceNotify, setForceNotify] = useState(false);
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+
+  const roomMembers = mockMembers.filter(
+    (m) => room?.memberUserIds.includes(m.userId) && m.userId !== mockCurrentUserId,
+  );
+  const mentionMatch = mentionPattern.exec(body);
+
+  const handleSelectMention = (member: (typeof roomMembers)[number]) => {
+    if (!mentionMatch) return;
+    const prefix = body.slice(0, body.length - mentionMatch[0].length);
+    setBody(`${prefix}@${member.displayName} `);
+    setMentionedUserIds((prev) => (prev.includes(member.userId) ? prev : [...prev, member.userId]));
+  };
 
   const handleSend = () => {
     if (!body.trim()) return;
@@ -48,11 +65,13 @@ export function ChatRoomScreen({ route }: Props) {
         readByUserIds: [mockCurrentUserId],
         status: "sent",
         forceNotify,
+        mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
         createdAt: new Date().toISOString(),
       },
     ]);
     setBody("");
     setForceNotify(false);
+    setMentionedUserIds([]);
   };
 
   const handleCall = () => {
@@ -128,6 +147,14 @@ export function ChatRoomScreen({ route }: Props) {
                     <Text style={styles.forceNotifyTag}>緊急連絡</Text>
                   </View>
                 )}
+                {!!item.mentionedUserIds?.length && (
+                  <View style={styles.tagRow}>
+                    <Ionicons name="at-outline" size={12} color={colors.brandDark} />
+                    <Text style={styles.mentionTag}>
+                      {item.mentionedUserIds.map((id) => memberName(id)).join("、")} 宛
+                    </Text>
+                  </View>
+                )}
                 <Text>{item.body}</Text>
               </View>
               <View style={styles.reactionRow}>
@@ -142,9 +169,12 @@ export function ChatRoomScreen({ route }: Props) {
         }}
       />
       <View style={styles.composer}>
+        {room?.isGroup && mentionMatch && (
+          <MemberPicker members={roomMembers} query={mentionMatch[1]} onSelect={handleSelectMention} />
+        )}
         <TextInput
           style={styles.input}
-          placeholder="メッセージを入力"
+          placeholder={room?.isGroup ? "メッセージを入力（@でメンション）" : "メッセージを入力"}
           value={body}
           onChangeText={setBody}
           multiline
@@ -181,6 +211,7 @@ const styles = StyleSheet.create({
   reactionRow: { marginTop: 4 },
   tagRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 },
   forceNotifyTag: { fontSize: 11, fontWeight: "700", color: colors.danger },
+  mentionTag: { fontSize: 11, fontWeight: "700", color: colors.brandDark },
   composer: { padding: 16, gap: 8 },
   input: { backgroundColor: colors.surface, borderRadius: 12, padding: 10, minHeight: 44 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },

@@ -40,6 +40,7 @@ export class OnConnectStack extends Stack {
     new NotificationConstruct(this, "Notification", {
       envName,
       usersTable: db.usersTable,
+      chatRoomsTable: db.chatRoomsTable,
       messagesTable: db.messagesTable,
       bulletinPostsTable: db.bulletinPostsTable,
     });

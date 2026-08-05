@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users } from "lucide-react";
+import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users, AtSign } from "lucide-react";
 import {
   mockChatRooms,
   mockMembers,
@@ -11,8 +11,12 @@ import {
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
+import { MemberPicker } from "../components/MemberPicker";
 
 const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
+
+/** 本文末尾の "@検索語" にマッチする（カーソルが末尾にある前提の簡易実装） */
+const mentionPattern = /@([^\s@]*)$/;
 
 /**
  * チャット詳細画面（7章 3番）
@@ -33,6 +37,19 @@ export function ChatRoomPage() {
   const [body, setBody] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [forceNotify, setForceNotify] = useState(false);
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+
+  const roomMembers = mockMembers.filter(
+    (m) => room?.memberUserIds.includes(m.userId) && m.userId !== mockCurrentUserId,
+  );
+  const mentionMatch = mentionPattern.exec(body);
+
+  const handleSelectMention = (member: (typeof roomMembers)[number]) => {
+    if (!mentionMatch) return;
+    const prefix = body.slice(0, body.length - mentionMatch[0].length);
+    setBody(`${prefix}@${member.displayName} `);
+    setMentionedUserIds((prev) => (prev.includes(member.userId) ? prev : [...prev, member.userId]));
+  };
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,12 +66,14 @@ export function ChatRoomPage() {
         status: scheduledAt ? "scheduled" : "sent",
         scheduledAt: scheduledAt || undefined,
         forceNotify,
+        mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
         createdAt: new Date().toISOString(),
       },
     ]);
     setBody("");
     setForceNotify(false);
     setScheduledAt("");
+    setMentionedUserIds([]);
   };
 
   const handleCall = () => {
@@ -128,6 +147,11 @@ export function ChatRoomPage() {
                     <Clock size={12} /> 予約送信（{m.scheduledAt}）
                   </div>
                 )}
+                {!!m.mentionedUserIds?.length && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, color: colors.brandDark, fontSize: 11 }}>
+                    <AtSign size={12} /> {m.mentionedUserIds.map((id) => memberName(id)).join("、")} 宛
+                  </div>
+                )}
                 <div>{m.body}</div>
               </div>
               <div style={{ marginTop: 4 }}>
@@ -142,7 +166,17 @@ export function ChatRoomPage() {
         })}
       </div>
       <form onSubmit={handleSend} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="メッセージを入力" />
+        <div style={{ position: "relative" }}>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder={room?.isGroup ? "メッセージを入力（@でメンション）" : "メッセージを入力"}
+            style={{ width: "100%", boxSizing: "border-box" }}
+          />
+          {room?.isGroup && mentionMatch && (
+            <MemberPicker members={roomMembers} query={mentionMatch[1]} onSelect={handleSelectMention} />
+          )}
+        </div>
         <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <Clock size={16} /> 予約送信日時：
           <input

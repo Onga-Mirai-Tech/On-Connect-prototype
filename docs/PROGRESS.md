@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 4完了）
+# On-Connect 実装進捗まとめ（〜2026-08-05時点、Phase 5完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -24,15 +24,16 @@
 - **Phase 3 追加要望（曜日/祝日・メモ欄・当番人数集計・月間サマリー）**：完了・ブラウザ確認済み（9章参照）
 - **Phase 4（メニュー画面・ナビゲーション再編）**：完了・web/mobile双方でブラウザ/型チェック確認済み
   （詳細は下記3章26.参照）
+- **Phase 5（チャットのメンション機能）**：完了・web/mobile双方でブラウザ/型チェック確認済み
+  （詳細は下記3章27.参照）
 
 ### 未着手のフェーズ（計画ファイル参照）
-- Phase 5：チャットのメンション機能
 - Phase 6：カレンダーの個別予定`.ics`エクスポート＋リマインド
 
 ### 現在のコミット状況
-Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）は
-**コミット済み・未push**（`git log`で確認すること。コミットハッシュ`410f5ad`まで）。
-**Phase 4（3章26.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
+Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）は
+**コミット済み・未push**（`git log`で確認すること。コミットハッシュ`eb37f80`まで）。
+**Phase 5（3章27.）の変更は、本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。
 次回セッション開始時は`git status`で確認し、必要ならユーザーに確認の上コミットすること。
 
 ### AWSデプロイの状況
@@ -65,7 +66,7 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
   `git push`が通る状態（credential helperは`gh auth setup-git`で設定）
 - Web: `npm run build --workspace apps/web` 成功
 - Mobile: `npx tsc --noEmit`（apps/mobile内）成功。シミュレータでの実機確認は未実施
-- `infra`: `cdk synth` と Jestテスト成功（Phase3追加要望対応後の時点で**82件**）
+- `infra`: `cdk synth` と Jestテスト成功（Phase5完了時点で**88件**）
 - **エクセルファイル読み込みの注意**：macOSの`~/.Trash`（ゴミ箱）はTCC制限で`openpyxl`等から直接読めない
   （`Operation not permitted`）。ユーザーにデスクトップ等へ移動してもらう必要がある
 
@@ -168,6 +169,32 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
     - テスト：Lambda/CDK変更無し。`npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）で
       型エラー無しを確認。ブラウザで4タブ構成・メニュー画面からの遷移・管理者/非管理者での表示切り替え
       （`mockCurrentUserId`を一時的に`user-01`に切り替えて確認、確認後`user-03`に戻し済み）を目視確認済み
+27. **【Phase 5】チャットのメンション機能**：
+    - `packages/shared/src/types.ts`の`Message`に`mentionedUserIds?: string[]`追加。
+      `infra/graphql/schema.graphql`の`Message`・`SendMessageInput`にも追加、`chat-construct.ts`の
+      `SendMessageResolver` VTLで`attachmentKeys`と同じ「未指定なら空配列」パターンで属性を書き込むよう対応
+    - 新規`infra/lambda/common/push.ts`：SNS発行の共通ヘルパー`publishPush(topicArn, payload)`
+      （このプロジェクトで初めてSNS発行を実装。Phase 6のリマインドもここを再利用する予定）
+    - `infra/lambda/messages/pushNotification.ts`を実装（それまでは`console.log`のみのスタブだった）：
+      判定優先順位は「①`forceNotify`→メンション有無・`notificationStatus`を無視しルーム全員、
+      ②メンションあり→メンション先のみ（`notificationStatus`は考慮）、③どちらでもなし→ルーム全員のうち
+      `notificationStatus === "ON"`」。送信者自身は常に除外。ルームメンバー取得のため`ChatRoomsTable`への
+      読み取り権限を`notification-construct.ts`に追加（`on-connect-stack.ts`で`chatRoomsTable`を渡すよう変更）
+    - `infra/package.json`に`@aws-sdk/client-sns`・`@aws-sdk/util-dynamodb`を追加
+    - Web/Mobile共通コンポーネント`MemberPicker`新設（`apps/web/src/components/`・`apps/mobile/src/components/`）：
+      ルームメンバーを`memberMatchesQuery`で検索・選択できる。グループチャット作成画面の
+      「メンバー個別選択」（現状TODOのまま）でも将来使える汎用的な作りだが、今回はそちらへの組み込みは未実施
+    - `ChatRoomPage.tsx`/`ChatRoomScreen.tsx`：本文末尾が`@検索語`にマッチする間（正規表現
+      `/@([^\s@]*)$/`によるカーソル末尾前提の簡易実装）`MemberPicker`を表示し、選択すると
+      `@表示名 `を本文に挿入して`mentionedUserIds`に追加。メッセージ表示側にも「@メンバー名 宛」タグを追加
+      （forceNotifyの「緊急連絡」タグと同じ見た目のパターン）。チャット機能自体がバックエンド未接続のため
+      今回もローカルstateのみで完結
+    - テスト：新規`infra/test/lambda/pushNotification.test.ts`（forceNotify優先・メンション限定・
+      デフォルト全員通知・送信者除外・対象0人ならSNS非発行・INSERT以外は無視の6ケース、
+      `aws-sdk-client-mock`で`DynamoDBDocumentClient`と`SNSClient`の両方をモック）。
+      プロジェクト全体で88件、全green。`cdk synth`でGraphQLスキーマ・VTLの構文も確認済み
+    - ブラウザでグループチャットに実際に`@`入力→候補表示→選択→本文挿入→送信→メンションタグ表示までの
+      一連の流れを目視確認済み
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -189,20 +216,22 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
   `manageCalendarCategories`/`manageShifts`）。**bulletin/calendar/shiftsのカテゴリー管理系は権限チェック
   済みだが、CalendarEvents本体・BulletinPosts本体には権限チェックが無い**（全メンバーが作成編集削除可、
   設計上の意図的な選択）
-- Web/Mobileの全画面UI（ダミーデータ`packages/shared/src/mockData.ts`で表示。シフト管理画面含む）
-- 検索・フィルタ・ソート・ヘッダー連携・リアクション・コメント投稿などのフロントエンドロジック
-  （いずれもローカルstateで完結。リロードで消える＝バックエンド未接続）
+- Web/Mobileの全画面UI（ダミーデータ`packages/shared/src/mockData.ts`で表示。シフト管理・メニュー画面含む）
+- 検索・フィルタ・ソート・ヘッダー連携・リアクション・コメント投稿・チャットの`@`メンションなどの
+  フロントエンドロジック（いずれもローカルstateで完結。リロードで消える＝バックエンド未接続）
+- チャット新着メッセージのプッシュ通知判定＋SNS発行ロジック（`pushNotification.ts`、27.参照）。
+  forceNotify優先・メンション限定・デフォルト全員通知の3分岐、送信者除外まで実装・テスト済み
+  （実際のモバイルプッシュ配信＝SNSトピック以降のAPNs/FCM接続は未実装）
 
 ### 未実装（TODOコメントあり、501スタブ等）
 - Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装）
-- プッシュ通知Lambda内の実際の送信ロジック（SNS発行、Phase 5で初めて実装予定）
+- 掲示板の新規投稿通知Lambda（`bulletin/notifyOnPost.ts`）の実際の送信ロジック（`console.log`のみのスタブのまま。
+  チャット側の`pushNotification.ts`とは別ファイルで、Phase 5では対応対象外だった）
 - リアクション/コメントの永続化API（掲示板コメント用のDynamoDBテーブルは未作成）
 - Amazon Chime SDK Meeting/Attendee作成（音声通話は現状デモの着信画面遷移のみ）
 - Cognito認証・AppSyncクライアント接続（web/mobileともにログインはダミーで素通り。チャット機能全体が
-  バックエンド未接続）
-- チャットのメンション機能（Phase 5）
+  バックエンド未接続。そのためメンション機能もチャットと同様ローカルstateのみで完結）
 - カレンダーの`.ics`エクスポート・リマインド（Phase 6）
-- メニュー画面・ナビゲーション再編（Phase 4）
 
 ## 6. 会話内で回答した設計質問（コード変更なし、方針のみ）
 
@@ -226,31 +255,35 @@ Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3�
 | CDKスタック本体 | `infra/lib/on-connect-stack.ts` |
 | CDK各種construct | `infra/lib/constructs/*.ts` |
 | Lambdaハンドラ | `infra/lambda/**/*.ts` |
-| Lambda共通ヘルパー | `infra/lambda/common/{http,dynamo,authz,visibility,date}.ts` |
+| Lambda共通ヘルパー | `infra/lambda/common/{http,dynamo,authz,visibility,date,push}.ts` |
 | Users/Roles/MemberCategories CRUD | `infra/lambda/users/index.ts` |
 | 掲示板CRUD（BulletinCategories含む） | `infra/lambda/bulletin/crud.ts` |
 | カレンダーCRUD（独立DB、CalendarCategories含む） | `infra/lambda/calendar/crud.ts` |
 | 休日・当番・シフト・日次メモCRUD | `infra/lambda/shifts/crud.ts` |
 | 曜日・祝日ヘルパー（`@holiday-jp/holiday_jp`使用） | `packages/shared/src/holidays.ts` |
 | 通知自動リセット（休日連動） | `infra/lambda/users/dailyNotificationReset.ts` |
-| Lambda単体テスト（aws-sdk-client-mock使用、82件） | `infra/test/lambda/*.test.ts` |
+| チャット新着メッセージのプッシュ通知判定（forceNotify/メンション/デフォルト全員） | `infra/lambda/messages/pushNotification.ts` |
+| GraphQLスキーマ（チャット、mentionedUserIds含む） | `infra/graphql/schema.graphql` |
+| Lambda単体テスト（aws-sdk-client-mock使用、88件） | `infra/test/lambda/*.test.ts` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ（4タブ：チャット/掲示板/カレンダー/メニュー） | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: メニュー画面（メンバー/シフト管理/リンク集/個人設定/管理者設定への導線） | `apps/web/src/pages/MenuPage.tsx` |
 | Web: 管理者設定（ユーザー権限編集・各種カテゴリー管理） | `apps/web/src/pages/AdminPage.tsx` |
 | Web: カレンダー一覧/詳細/編集 | `apps/web/src/pages/Calendar{Page,DetailPage,EventEditPage}.tsx` |
 | Web: シフト管理（月間グリッド） | `apps/web/src/pages/ShiftManagementPage.tsx` |
+| Web: チャット詳細（`@`メンション対応） | `apps/web/src/pages/ChatRoomPage.tsx` |
+| Web/Mobile: メンバー検索・選択の共通コンポーネント | `apps/web/src/components/MemberPicker.tsx` / `apps/mobile/src/components/MemberPicker.tsx` |
 | Mobile: ナビゲーション定義（4タブ＋MenuStackNavigator） | `apps/mobile/src/navigation/AppNavigator.tsx` |
 | Mobile: メニュー画面（メンバー/シフト管理/リンク集/個人設定への導線） | `apps/mobile/src/screens/MenuScreen.tsx` |
 | Mobile: カレンダー一覧/詳細/編集 | `apps/mobile/src/screens/Calendar{Screen,DetailScreen,EventEditScreen}.tsx` |
 | Mobile: シフト管理（月間グリッド、MenuStackNavigator配下） | `apps/mobile/src/screens/ShiftManagementScreen.tsx` |
+| Mobile: チャット詳細（`@`メンション対応） | `apps/mobile/src/screens/ChatRoomScreen.tsx` |
 | ブランドアイコン生成スクリプト／画像 | `scripts/generate-brand-icon.py` / `assets/brand/*.png` |
 
 ## 8. 次にやりそうなこと（候補、優先度順ではない）
 
-- Phase 5：チャットのメンション機能（計画ファイル参照）
 - Phase 6：カレンダーの`.ics`エクスポート＋リマインド（計画ファイル参照）
-- リアクション/コメントの永続化、`notifyOnPost.ts`の実装
+- リアクション/コメントの永続化、`notifyOnPost.ts`の実装（掲示板側は引き続きスタブのまま）
 - 予約送信の実スケジューリング
 - Cognito認証・AppSyncクライアント接続（チャット機能をバックエンドに繋ぐ）
 - Mobileをシミュレータ/実機で見た目確認
