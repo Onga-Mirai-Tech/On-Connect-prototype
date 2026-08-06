@@ -1,7 +1,7 @@
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import type { DynamoDBStreamHandler } from "aws-lambda";
+import type { DynamoDBRecord, DynamoDBStreamHandler } from "aws-lambda";
 import type { ChatRoom, Message, User } from "@on-connect/shared";
 import { docClient } from "../common/dynamo";
 import { publishPush } from "../common/push";
@@ -18,10 +18,14 @@ const PUSH_TOPIC_ARN = process.env.PUSH_TOPIC_ARN!;
  *   3. どちらでもない → 従来通りルーム全員のうち notificationStatus === "ON" の人
  * 送信者自身は常に通知対象から除外する。
  * 音声通話の着信通知は本Lambdaの対象外（calls側で別途、例外なくnotificationStatusを尊重する）。
+ * 予約送信（Phase 10）が実際に配信されるのは`sendScheduled.ts`によるUpdateItem（status:
+ * scheduled→sent）のタイミングであり、これはMODIFYイベントとして届く。INSERT時点
+ * （＝予約登録した瞬間）では通知しないのが正しいため、MODIFYはこの遷移の場合のみ通す。
  */
 export const handler: DynamoDBStreamHandler = async (event) => {
   for (const record of event.Records) {
-    if (record.eventName !== "INSERT" || !record.dynamodb?.NewImage) continue;
+    if (!record.dynamodb?.NewImage) continue;
+    if (record.eventName !== "INSERT" && !isScheduledMessageDelivery(record)) continue;
 
     const message = unmarshall(record.dynamodb.NewImage as Record<string, AttributeValue>) as Message;
     const targetUserIds = await resolveTargetUserIds(message);
@@ -37,6 +41,14 @@ export const handler: DynamoDBStreamHandler = async (event) => {
     });
   }
 };
+
+/** MODIFYイベントが「予約送信の配信」（status: scheduled→sent）かどうかを判定する */
+function isScheduledMessageDelivery(record: DynamoDBRecord): boolean {
+  if (record.eventName !== "MODIFY" || !record.dynamodb?.OldImage || !record.dynamodb?.NewImage) return false;
+  const oldMessage = unmarshall(record.dynamodb.OldImage as Record<string, AttributeValue>) as Message;
+  const newMessage = unmarshall(record.dynamodb.NewImage as Record<string, AttributeValue>) as Message;
+  return oldMessage.status === "scheduled" && newMessage.status === "sent";
+}
 
 async function resolveTargetUserIds(message: Message): Promise<string[]> {
   let candidateIds: string[];

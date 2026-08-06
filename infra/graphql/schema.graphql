@@ -86,11 +86,18 @@ type Mutation {
   createRoom(input: CreateRoomInput!): ChatRoom!
   """絵文字リアクションのトグル（Phase 9）。read-modify-writeが必要なためLambdaリゾルバで処理する"""
   toggleMessageReaction(input: ToggleReactionInput!): Message!
+  """
+  予約送信メッセージの配信トリガー（Phase 10）。sendScheduled.tsがEventBridge Schedulerから
+  起動された際、Messagesテーブルの直接UpdateItemでstatusを更新した後、IAM署名付きでこの
+  ミューテーションを呼び出す。実体は単純なGetItem（再更新はしない）で、onMessageSent購読を
+  発火させてチャットルームへリアルタイム配信するためだけに存在する
+  """
+  deliverScheduledMessage(roomId: ID!, messageId: ID!): Message!
 }
 
 type Subscription {
   onMessageSent(roomId: ID!): Message
-    @aws_subscribe(mutations: ["sendMessage"])
+    @aws_subscribe(mutations: ["sendMessage", "deliverScheduledMessage"])
   onMessageRead(roomId: ID!): Message
     @aws_subscribe(mutations: ["markMessageRead"])
   onMessageReactionChanged(roomId: ID!): Message

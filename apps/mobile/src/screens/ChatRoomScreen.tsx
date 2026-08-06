@@ -40,6 +40,7 @@ export function ChatRoomScreen({ route }: Props) {
   const [room, setRoom] = useState<ChatRoom | undefined>(undefined);
   const [messages, setMessages] = useState<Message[]>([]);
   const [body, setBody] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
   const [forceNotify, setForceNotify] = useState(false);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const markingReadRef = useRef<Set<string>>(new Set());
@@ -114,6 +115,7 @@ export function ChatRoomScreen({ route }: Props) {
         roomId,
         senderId: currentUserId ?? "",
         body,
+        scheduledAt: scheduledAt || undefined,
         forceNotify,
         mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
       });
@@ -127,7 +129,8 @@ export function ChatRoomScreen({ route }: Props) {
           senderId: currentUserId ?? "",
           body,
           readByUserIds: [currentUserId ?? ""],
-          status: "sent",
+          status: scheduledAt ? "scheduled" : "sent",
+          scheduledAt: scheduledAt || undefined,
           forceNotify,
           mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
           createdAt: new Date().toISOString(),
@@ -135,8 +138,18 @@ export function ChatRoomScreen({ route }: Props) {
       ]);
     }
     setBody("");
+    setScheduledAt("");
     setForceNotify(false);
     setMentionedUserIds([]);
+  };
+
+  const handleCancelScheduled = async (messageId: string) => {
+    try {
+      await chatClient.cancelScheduledMessage(roomId, messageId);
+      setMessages((prev) => prev.filter((m) => m.messageId !== messageId));
+    } catch {
+      // 未接続時・既に配信済みの場合等は何もしない
+    }
   };
 
   const handleCall = () => {
@@ -221,6 +234,18 @@ export function ChatRoomScreen({ route }: Props) {
                     <Text style={styles.forceNotifyTag}>緊急連絡</Text>
                   </View>
                 )}
+                {item.status === "scheduled" && (
+                  <View style={styles.tagRow}>
+                    <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                    <Text style={styles.scheduledTag}>予約送信（{item.scheduledAt}）</Text>
+                    {isSelf && (
+                      <Pressable onPress={() => handleCancelScheduled(item.messageId)} style={styles.cancelScheduledButton}>
+                        <Ionicons name="close-outline" size={12} color={colors.danger} />
+                        <Text style={styles.cancelScheduledText}>取消</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
                 {!!item.mentionedUserIds?.length && (
                   <View style={styles.tagRow}>
                     <Ionicons name="at-outline" size={12} color={colors.brandDark} />
@@ -253,6 +278,17 @@ export function ChatRoomScreen({ route }: Props) {
           onChangeText={setBody}
           multiline
         />
+        <View style={styles.rowLabel}>
+          <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+          <Text>予約送信日時：</Text>
+          <TextInput
+            style={styles.scheduledInput}
+            placeholder="YYYY-MM-DDTHH:mm"
+            value={scheduledAt}
+            onChangeText={setScheduledAt}
+            autoCapitalize="none"
+          />
+        </View>
         <View style={styles.row}>
           <View style={styles.rowLabel}>
             <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
@@ -286,8 +322,12 @@ const styles = StyleSheet.create({
   tagRow: { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 2 },
   forceNotifyTag: { fontSize: 11, fontWeight: "700", color: colors.danger },
   mentionTag: { fontSize: 11, fontWeight: "700", color: colors.brandDark },
+  scheduledTag: { fontSize: 11, color: colors.textMuted },
+  cancelScheduledButton: { flexDirection: "row", alignItems: "center", gap: 2, marginLeft: 6 },
+  cancelScheduledText: { fontSize: 11, color: colors.danger },
   composer: { padding: 16, gap: 8 },
   input: { backgroundColor: colors.surface, borderRadius: 12, padding: 10, minHeight: 44 },
+  scheduledInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 8, padding: 6, fontSize: 12 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   rowLabel: { flexDirection: "row", alignItems: "center", gap: 6 },
   sendButton: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, backgroundColor: colors.brand, borderRadius: 12, padding: 12 },

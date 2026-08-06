@@ -1,5 +1,6 @@
 import { Construct } from "constructs";
 import * as path from "path";
+import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
@@ -17,6 +18,8 @@ export interface SchedulerConstructProps {
   calendarEventsTable: dynamodb.Table;
   pushTopic: sns.Topic;
   chatApiUrl: string;
+  /** Phase 10: sendScheduledFnがdeliverScheduledMessageをIAM署名付きで呼び出すためのgrantに使う */
+  chatApi: appsync.GraphqlApi;
 }
 
 /**
@@ -59,6 +62,12 @@ export class SchedulerConstruct extends Construct {
     });
     props.messagesTable.grantReadWriteData(this.sendScheduledFn);
     this.sendScheduledFn.grantInvoke(schedulerInvocationRole);
+    // Phase 10: 予約送信の配信トリガー用にdeliverScheduledMessageフィールドのみappsync:GraphQLを許可
+    props.chatApi.grant(
+      this.sendScheduledFn,
+      appsync.IamResource.ofType("Mutation", "deliverScheduledMessage"),
+      "appsync:GraphQL",
+    );
 
     this.streamProcessorFn = new lambdaNode.NodejsFunction(this, "MessageStreamProcessorFn", {
       entry: path.join(__dirname, "../../lambda/messages/onMessageStreamChange.ts"),

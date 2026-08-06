@@ -69,9 +69,22 @@ const onMessageReadSubscription = `subscription OnMessageRead($roomId: ID!) {
 const onMessageReactionChangedSubscription = `subscription OnMessageReactionChanged($roomId: ID!) {
   onMessageReactionChanged(roomId: $roomId) { ${MESSAGE_FIELDS} }
 }`;
+const cancelScheduledMessageMutation = `mutation CancelScheduledMessage($roomId: ID!, $messageId: ID!) {
+  cancelScheduledMessage(roomId: $roomId, messageId: $messageId) { ${MESSAGE_FIELDS} }
+}`;
 
 function ensureConfigured() {
   if (!GRAPHQL_API_URL) throw new ChatApiError("API未接続");
+}
+
+/**
+ * `<input type="datetime-local">`が返す秒・タイムゾーン無しの値（"YYYY-MM-DDTHH:mm"）を、
+ * AWSDateTimeが要求する秒・タイムゾーン付きのISO8601形式に変換する。
+ * 園の所在地がAsia/Tokyo固定という設計上の前提に従い、ブラウザのローカル時刻をJSTとして扱う。
+ */
+function toAwsDateTime(localDateTime: string): string {
+  const withSeconds = localDateTime.length === 16 ? `${localDateTime}:00` : localDateTime;
+  return `${withSeconds}+09:00`;
 }
 
 export const chatClient = {
@@ -106,7 +119,9 @@ export const chatClient = {
     ensureConfigured();
     const res = await client.graphql<GraphQLQuery<{ sendMessage: Message }>>({
       query: sendMessageMutation,
-      variables: { input },
+      variables: {
+        input: input.scheduledAt ? { ...input, scheduledAt: toAwsDateTime(input.scheduledAt) } : input,
+      },
     });
     return res.data.sendMessage;
   },
@@ -136,6 +151,16 @@ export const chatClient = {
       variables: { input },
     });
     return res.data.toggleMessageReaction;
+  },
+
+  /** 予約中メッセージの取消（Phase 10）。送信予定時刻より前のみ成功する（バックエンド側でstatus条件チェック） */
+  cancelScheduledMessage: async (roomId: string, messageId: string): Promise<Message> => {
+    ensureConfigured();
+    const res = await client.graphql<GraphQLQuery<{ cancelScheduledMessage: Message }>>({
+      query: cancelScheduledMessageMutation,
+      variables: { roomId, messageId },
+    });
+    return res.data.cancelScheduledMessage;
   },
 
   /** 新着メッセージを購読する。戻り値の関数を呼ぶと購読解除する。 */

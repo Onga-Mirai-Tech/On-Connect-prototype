@@ -46,6 +46,7 @@ export class OnConnectStack extends Stack {
       calendarEventsTable: db.calendarEventsTable,
       pushTopic: notification.pushTopic,
       chatApiUrl: chat.api.graphqlUrl,
+      chatApi: chat.api,
     });
 
     const api = new ApiConstruct(this, "Api", {

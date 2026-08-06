@@ -129,3 +129,49 @@ test("INSERT以外のイベント（MODIFY等）は無視する", async () => {
 
   expect(snsMock.commandCalls(PublishCommand)).toHaveLength(0);
 });
+
+test("予約送信の配信（MODIFY: status scheduled→sent）は通知対象になる（Phase 10）", async () => {
+  mockUsers([
+    { userId: "member-2", notificationStatus: "ON" },
+    { userId: "member-3", notificationStatus: "OFF" },
+  ]);
+  const oldMessage = buildMessage({ status: "scheduled", scheduledAt: "2026-08-07T15:30:00+09:00" });
+  const newMessage = buildMessage({ status: "sent", scheduledAt: "2026-08-07T15:30:00+09:00" });
+  const event: DynamoDBStreamEvent = {
+    Records: [
+      {
+        eventName: "MODIFY",
+        dynamodb: {
+          OldImage: marshall(oldMessage, { removeUndefinedValues: true }) as never,
+          NewImage: marshall(newMessage, { removeUndefinedValues: true }) as never,
+        },
+      },
+    ],
+  } as DynamoDBStreamEvent;
+
+  await handler(event, {} as never, (() => {}) as never);
+
+  expect(snsMock.commandCalls(PublishCommand)).toHaveLength(1);
+  const payload = JSON.parse(snsMock.commandCalls(PublishCommand)[0].args[0].input.Message as string);
+  expect(payload.targetUserIds).toEqual(["member-2"]);
+});
+
+test("MODIFYでもstatusがscheduled→sent以外の変化（既読更新等）は通知しない", async () => {
+  const oldMessage = buildMessage({ readByUserIds: [] });
+  const newMessage = buildMessage({ readByUserIds: ["member-2"] });
+  const event: DynamoDBStreamEvent = {
+    Records: [
+      {
+        eventName: "MODIFY",
+        dynamodb: {
+          OldImage: marshall(oldMessage, { removeUndefinedValues: true }) as never,
+          NewImage: marshall(newMessage, { removeUndefinedValues: true }) as never,
+        },
+      },
+    ],
+  } as DynamoDBStreamEvent;
+
+  await handler(event, {} as never, (() => {}) as never);
+
+  expect(snsMock.commandCalls(PublishCommand)).toHaveLength(0);
+});

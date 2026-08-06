@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users, AtSign } from "lucide-react";
+import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users, AtSign, X } from "lucide-react";
 import { mockChatRooms, mockMessages, toggleReaction, type ChatRoom, type Message } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
@@ -146,6 +146,15 @@ export function ChatRoomPage() {
     // TODO: POST /calls を呼び出し、Chime SDK Meeting/Attendee を取得して発信画面へ遷移する
   };
 
+  const handleCancelScheduled = async (messageId: string) => {
+    try {
+      await chatClient.cancelScheduledMessage(roomId, messageId);
+      setMessages((prev) => prev.filter((m) => m.messageId !== messageId));
+    } catch {
+      // 未接続時・既に配信済みの場合等は何もしない（一覧は次回取得時に正しい状態へ揃う）
+    }
+  };
+
   const handleToggleReaction = async (messageId: string, emoji: string) => {
     try {
       const updated = await chatClient.toggleMessageReaction({
@@ -220,6 +229,15 @@ export function ChatRoomPage() {
                 {m.status === "scheduled" && (
                   <div style={{ display: "flex", alignItems: "center", gap: 4, color: colors.textMuted, fontSize: 11 }}>
                     <Clock size={12} /> 予約送信（{m.scheduledAt}）
+                    {isSelf && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelScheduled(m.messageId)}
+                        style={{ display: "flex", alignItems: "center", gap: 2, color: colors.danger, padding: 0 }}
+                      >
+                        <X size={12} /> 取消
+                      </button>
+                    )}
                   </div>
                 )}
                 {!!m.mentionedUserIds?.length && (

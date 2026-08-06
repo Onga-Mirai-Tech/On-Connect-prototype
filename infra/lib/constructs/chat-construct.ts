@@ -34,6 +34,9 @@ export class ChatConstruct extends Construct {
           authorizationType: appsync.AuthorizationType.USER_POOL,
           userPoolConfig: { userPool: props.userPool },
         },
+        // Phase 10: sendScheduled.tsがdeliverScheduledMessageをIAM署名付きで呼び出すために追加
+        // （このプロジェクト初のLambda→AppSync呼び出し。逆方向＝AppSync→LambdaはtoggleReactionFn、Phase 9）
+        additionalAuthorizationModes: [{ authorizationType: appsync.AuthorizationType.IAM }],
       },
       logConfig: { fieldLogLevel: appsync.FieldLogLevel.ERROR },
       xrayEnabled: true,
@@ -110,9 +113,16 @@ export class ChatConstruct extends Construct {
   "nextToken": $util.toJson($util.defaultIfNullOrEmpty($ctx.args.nextToken, null)),
   "scanIndexForward": true
 }`),
-      responseMappingTemplate: appsync.MappingTemplate.fromString(
-        "$util.toJson($ctx.result.items)",
-      ),
+      // Phase 10: 予約中（status === "scheduled"）のメッセージは、指定時刻が来るまで送信者本人
+      // にしか見せない（他のメンバーに本文が事前に見えてしまうと「予約送信」の意味が無くなるため）
+      responseMappingTemplate: appsync.MappingTemplate.fromString(`
+#set($visible = [])
+#foreach($item in $ctx.result.items)
+  #if($item.status != "scheduled" || $item.senderId == $ctx.identity.sub)
+    $util.qr($visible.add($item))
+  #end
+#end
+$util.toJson($visible)`),
     });
 
     messagesDS.createResolver("SendMessageResolver", {
@@ -198,6 +208,23 @@ export class ChatConstruct extends Construct {
     "expression": "#status = :scheduled",
     "expressionNames": { "#status": "status" },
     "expressionValues": { ":scheduled": $util.dynamodb.toDynamoDBJson("scheduled") }
+  }
+}`),
+      responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+    });
+
+    // 予約送信メッセージの配信トリガー（Phase 10）。sendScheduled.tsがEventBridge Schedulerから
+    // 起動された際、Messagesテーブルを直接UpdateItemした後にIAM署名付きで呼び出す。
+    // 実体は単純なGetItem（再更新はしない）で、onMessageSent購読を発火させるためだけに存在する
+    messagesDS.createResolver("DeliverScheduledMessageResolver", {
+      typeName: "Mutation",
+      fieldName: "deliverScheduledMessage",
+      requestMappingTemplate: appsync.MappingTemplate.fromString(`{
+  "version": "2018-05-29",
+  "operation": "GetItem",
+  "key": {
+    "roomId": $util.dynamodb.toDynamoDBJson($ctx.args.roomId),
+    "messageId": $util.dynamodb.toDynamoDBJson($ctx.args.messageId)
   }
 }`),
       responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
