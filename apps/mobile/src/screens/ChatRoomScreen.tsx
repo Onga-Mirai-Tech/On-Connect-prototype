@@ -1,40 +1,95 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, Switch, StyleSheet, FlatList } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockChatRooms, mockMessages, toggleReaction, type Message } from "@on-connect/shared";
+import { mockChatRooms, mockMessages, toggleReaction, type ChatRoom, type Message } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { chatClient } from "../api/chatClient";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatRoom">;
 
 /** 本文末尾の "@検索語" にマッチする（カーソルが末尾にある前提の簡易実装） */
 const mentionPattern = /@([^\s@]*)$/;
 
+/** 同じmessageIdなら置き換え、無ければ追加する（sendMessage/markMessageReadの購読を同じロジックで扱う） */
+function upsertMessage(messages: Message[], incoming: Message): Message[] {
+  const idx = messages.findIndex((m) => m.messageId === incoming.messageId);
+  if (idx === -1) return [...messages, incoming];
+  const next = [...messages];
+  next[idx] = incoming;
+  return next;
+}
+
 /**
  * チャット詳細画面（7章 3番）
- * メッセージ作成時に予約送信・緊急通知オプション、1対1トークには発信ボタンを表示（5.2.2〜5.2.4）
- * TODO: AppSyncのクエリ・ミューテーション・サブスクリプションに置き換える（現状はダミーデータ表示）
+ * メッセージ作成時に緊急通知オプション、1対1トークには発信ボタンを表示（5.2.2〜5.2.4）
+ * Phase 8d：AppSyncのクエリ・ミューテーション・サブスクリプションに接続（失敗時はダミーデータに
+ * フォールバック）。リアクションはスキーマ未対応のためローカルstateのまま（Phase 9で対応）。
  */
 export function ChatRoomScreen({ route }: Props) {
   const { currentUserId } = useAuth();
   const { members } = useOrgData();
   const { roomId } = route.params;
   const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
-  const room = mockChatRooms.find((r) => r.roomId === roomId);
+
+  const [room, setRoom] = useState<ChatRoom | undefined>(undefined);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [body, setBody] = useState("");
+  const [forceNotify, setForceNotify] = useState(false);
+  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+  const markingReadRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [fetchedRoom, fetchedMessages] = await Promise.all([
+          chatClient.getChatRoom(roomId),
+          chatClient.listMessagesForRoom(roomId),
+        ]);
+        setRoom(fetchedRoom);
+        setMessages(fetchedMessages);
+      } catch {
+        setRoom(mockChatRooms.find((r) => r.roomId === roomId));
+        setMessages(mockMessages[roomId] ?? []);
+      }
+    })();
+
+    const unsubscribeSent = chatClient.subscribeToMessages(roomId, (message) => {
+      setMessages((prev) => upsertMessage(prev, message));
+    });
+    const unsubscribeRead = chatClient.subscribeToReads(roomId, (message) => {
+      setMessages((prev) => upsertMessage(prev, message));
+    });
+    markingReadRef.current = new Set();
+    return () => {
+      unsubscribeSent();
+      unsubscribeRead();
+    };
+  }, [roomId]);
+
+  // 自分宛て（送信者以外）の未読メッセージを表示した時点で既読にする（既読UI自体は新設しない）
+  useEffect(() => {
+    if (!currentUserId) return;
+    for (const m of messages) {
+      if (m.senderId === currentUserId) continue;
+      if (m.readByUserIds.includes(currentUserId)) continue;
+      if (markingReadRef.current.has(m.messageId)) continue;
+      markingReadRef.current.add(m.messageId);
+      chatClient
+        .markMessageRead({ roomId, messageId: m.messageId, userId: currentUserId })
+        .catch(() => markingReadRef.current.delete(m.messageId));
+    }
+  }, [messages, currentUserId, roomId]);
+
   const otherMemberId = room?.memberUserIds.find((id) => id !== currentUserId);
   const otherMember = members.find((m) => m.userId === otherMemberId);
   const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "") : roomId;
   const participantNames = room?.isGroup ? room.memberUserIds.map((id) => memberName(id)).join("、") : "";
-
-  const [messages, setMessages] = useState<Message[]>(mockMessages[roomId] ?? []);
-  const [body, setBody] = useState("");
-  const [forceNotify, setForceNotify] = useState(false);
-  const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
 
   const roomMembers = members.filter(
     (m) => room?.memberUserIds.includes(m.userId) && m.userId !== currentUserId,
@@ -48,23 +103,33 @@ export function ChatRoomScreen({ route }: Props) {
     setMentionedUserIds((prev) => (prev.includes(member.userId) ? prev : [...prev, member.userId]));
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!body.trim()) return;
-    // TODO: AppSync sendMessage mutation を呼び出す
-    setMessages((prev) => [
-      ...prev,
-      {
-        messageId: `local-${Date.now()}`,
+    try {
+      const sent = await chatClient.sendMessage({
         roomId,
         senderId: currentUserId ?? "",
         body,
-        readByUserIds: [currentUserId ?? ""],
-        status: "sent",
         forceNotify,
         mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+      });
+      setMessages((prev) => upsertMessage(prev, sent));
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          messageId: `local-${Date.now()}`,
+          roomId,
+          senderId: currentUserId ?? "",
+          body,
+          readByUserIds: [currentUserId ?? ""],
+          status: "sent",
+          forceNotify,
+          mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
     setBody("");
     setForceNotify(false);
     setMentionedUserIds([]);
@@ -76,7 +141,7 @@ export function ChatRoomScreen({ route }: Props) {
   };
 
   const handleToggleReaction = (messageId: string, emoji: string) => {
-    // TODO: AppSyncのミューテーションでリアクションを永続化する
+    // TODO: リアクション永続化はPhase 9対応（スキーマにフィールドが無い）
     setMessages((prev) =>
       prev.map((m) =>
         m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, currentUserId ?? "") } : m,

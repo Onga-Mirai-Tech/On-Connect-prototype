@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8c完了）
+# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -27,8 +27,14 @@ Phase 8aの実装計画・決定事項は`/Users/ikkounobuyuki/.claude/plans/eff
 当番シフト種別/日次記録）を一通り実装した。8cは事前調査（3エージェント並行）→タスク一覧化→
 ユーザーとの1点の設計判断（シフト月表示の取得方式）を経て順次実装した流れで、8a/8bのような
 独立した実装計画ファイルは作成していない（本ファイルの3章32.が詳細の記録）。
-Phase 8a〜8cともに実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作・API疎通の
-確認はできていない点に注意（8a〜8dが一通り終わった段階でユーザーに確認の上デプロイする既定方針）。
+最後にPhase 8dとして、チャット機能をAppSyncに接続した。8a〜8cと違いバックエンド
+（ルーム一覧取得クエリ・ルーム作成mutation）に構造的な欠落があったため、infra追加実装
+（スキーマ拡張＋リゾルバ新設）から着手した点が特徴（実装計画は
+`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`に記録済み、8bの計画ファイルを
+8d用に上書きして再利用）。**これでPhase 8（Cognito認証・REST/AppSync接続）が全て完了した**。
+Phase 8a〜8dともに実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作・API疎通の
+確認はできていない点に注意（8a〜8dが一通り終わった段階でユーザーに確認の上デプロイする既定方針
+だったため、次回セッションでユーザーにデプロイの可否を確認すること）。
 
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
@@ -54,11 +60,14 @@ Phase 8a〜8cともに実際のCognitoへのデプロイをまだ行っていな
 - **Phase 8c（残りのREST接続：OrgLinks・掲示板・カレンダー・シフト）**：コード実装完了。web build・
   mobile tscは通過済み（infra側の変更は無し）。ただし**実際のAPIへの疎通確認はできていない**
   （デプロイ前のため、未接続時のダミーデータへのフォールバック動作のみ確認）。詳細は下記3章32.参照
+- **Phase 8d（チャットのAppSync接続）**：コード実装完了。infra全101テスト・`cdk synth`・web
+  build・mobile tscは通過済み。ただし**実際のAppSyncへの疎通確認はできていない**（デプロイ前のため、
+  未接続時のダミーデータへのフォールバック動作のみ確認）。詳細は下記3章33.参照。
+  **これでPhase 8（8a〜8d）が全て完了**
 
-### Phase 8d〜12（未着手、優先順に記載。詳細は8章参照）
-- **Phase 8d: チャットのAppSync接続**（8a〜8cと違い、バックエンドに構造的な欠落があるため
-  infra追加実装が必須。ルーム一覧取得・ルーム作成・リアクションのmutation/スキーマが未実装）
-- **Phase 9: リアクション/コメントの永続化**（Phase 8後）
+### Phase 9〜12（未着手、優先順に記載。詳細は8章参照）
+- **Phase 9: リアクション/コメントの永続化**（掲示板コメントに加え、チャットのリアクションも
+  スキーマ未対応のためこのフェーズで合わせて対応する）
 - **Phase 10: 予約送信の実スケジューリング**（Phase 8後、既存インフラの実地検証が中心）
 - **Phase 11: Amazon Chime SDK音声通話実装**（Phase 8後、実機検証にAWSデプロイが必要）
 - **Phase 12: 実際のモバイルプッシュ配信**（Phase 8後）
@@ -66,8 +75,9 @@ Phase 8a〜8cともに実際のCognitoへのデプロイをまだ行っていな
 ### 現在のコミット状況
 Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
 Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決定事項の記録＋Phase 8a（3章30.）＋
-Phase 8b（3章31.）は**コミット済み・pushもユーザー指示で完了済み**（コミットハッシュ`3d799f0`まで、
-`git log`で確認すること）。Phase 8c（3章32.、この本ファイルの更新も含む）は**未コミット**
+Phase 8b（3章31.）＋Phase 8c（3章32.）は**コミット済み・pushもユーザー指示で完了済み**
+（コミットハッシュ`3c67a3b`まで、`git log`で確認すること）。Phase 8d（3章33.、この本ファイルの
+更新も含む）は**未コミット**
 （次回セッション開始時に`git status`で確認し、ユーザーに確認の上コミット・pushすること）。
 
 ### AWSデプロイの状況
@@ -437,6 +447,63 @@ Phase 8b（3章31.）は**コミット済み・pushもユーザー指示で完�
       実地確認できず、型チェック・ビルド通過のみで確認）
     - **未検証**：実際のAPIに対する各リソースの取得・作成・更新・削除の動作、ログイン後の各画面での
       実データ表示。実デプロイが必要（8a〜8d完了後にユーザーへ確認してから実施）
+33. **【Phase 8d】チャットのAppSync接続**：
+    8a〜8cと異なり、バックエンド（AppSync GraphQL）に構造的な欠落があったため、infra追加実装
+    から着手した（「自分が参加しているルーム一覧を取得するクエリ」も「ルームを作成するmutation」も
+    元々存在しなかった）。事前調査（Explore agent 1件）→計画作成（Plan mode、
+    `reactive-purring-castle.md`を8d用に上書き再利用）→ユーザー承認、の流れで実装した。
+    - **infra**：`infra/graphql/schema.graphql`に`Query.listChatRoomsForUser(userId)`・
+      `Mutation.createRoom(input: CreateRoomInput!)`（`{isGroup, name, memberUserIds}`）を追加。
+      `infra/lib/constructs/chat-construct.ts`にリゾルバ2件を追加：
+      `ListChatRoomsForUserResolver`は`ChatRoomsTable`への**Scan**＋
+      `FilterExpression: contains(memberUserIds, :userId)`（GSIは追加せず、`dailyReminder.ts`が
+      `CalendarEventsTable`を全件スキャンしている前例に揃えた設計判断。組織規模35人程度・
+      ルーム数も少数という前提）、`CreateRoomResolver`は`SendMessageResolver`と同じ素直な
+      PutItemパターン。1:1 DMの重複作成防止はサーバー側では行わず、フロント側の
+      「既存ルームを先に探す」ロジックに委ねる意図的な簡略化（小規模組織向けツールという前提）。
+      `on-connect-stack.test.ts`のAppSyncアサーションはリソース数のみの検証のため
+      既存101件のテストに影響なし（`npm test`で確認済み）
+    - **リアクションは対象外のまま**：`Message`型にリアクション用フィールドが元々無く、
+      掲示板のコメント・リアクション（Phase 8cで対象外にした）と合わせてPhase 9で対応する方針に統一
+    - **web/mobile: AppSyncクライアント新設**：`apps/web/src/api/chatClient.ts`・
+      `apps/mobile/src/api/chatClient.ts`を新設。`aws-amplify`はPhase 8aでCognito認証用に
+      導入済みだったため追加の依存パッケージは不要で、`aws-amplify/api`の`generateClient()`を
+      そのまま利用できた（`aws-amplify/api`は`@aws-amplify/api-graphql`を内包）。GraphQL文字列は
+      `orgApi.ts`と同じ「コード生成を使わず手書き」のスタイルに統一。TypeScriptの型解決には
+      Amplifyの`GraphQLQuery<T>`/`GraphQLSubscription<T>`ヘルパー型が必要だった
+      （素朴に`client.graphql<T>()`と書いただけでは、クエリ/ミューテーション用のPromise型と
+      サブスクリプション用のObservable型のどちらになるかコード生成を使わない場合は型推論できず、
+      `res.data`や`.subscribe()`でコンパイルエラーになる。ビルドして初めて判明した詰まりどころ）
+    - `amplifyConfig.ts`（web/mobile）に`API.GraphQL`設定を追加（`endpoint`/`region`/
+      `defaultAuthMode: "userPool"`）。`apps/web/.env.example`に`VITE_GRAPHQL_API_URL`、
+      `apps/mobile/.env.example`に`EXPO_PUBLIC_GRAPHQL_API_URL`を追加（`AWS_REGION`は8aで
+      追加済みのものを流用）。値は`infra/lib/on-connect-stack.ts`の`GraphqlApiUrl`
+      （CfnOutput、既存）から取得する運用
+    - **画面接続**：`chatClient`呼び出し失敗時は全画面で`mockChatRooms`/`mockMessages`に
+      フォールバックする方針を`orgApi`と統一。
+      - `ChatListPage`/`Screen`：`listChatRoomsForUser`でルーム一覧取得後、各ルームの
+        `listMessagesForRoom`（デフォルトlimit=50）でプレビュー・検索対象を取得
+      - `ChatRoomPage`/`Screen`：`getChatRoom`＋`listMessagesForRoom`で初期表示、
+        `onMessageSent`/`onMessageRead`を購読しリアルタイム反映（同一messageIdなら置き換え、
+        無ければ追加する`upsertMessage`関数で一本化）。`sendMessage`で送信、自分宛て
+        （送信者以外）の未読メッセージを表示した時点で`markMessageRead`を呼ぶ（既読UI自体は
+        新設せず、mutationの発火のみ）。リアクションはローカルstateのまま変更なし
+      - `NewDirectMessagePage`/`Screen`：`listChatRoomsForUser`の結果から既存1:1ルームを探し、
+        無ければ`createRoom`で新規作成。**`MembersPage`/`Screen`の「チャット」ボタンも
+        同じロジックに接続**（計画時点では対象外だったが、実装中に同じ「既存ルーム検索→
+        無ければ仮IDへ遷移」という古いパターンが残っていることに気づき、Phase 8dのゴール
+        （チャットの主要な入口が実際に機能すること）を満たすために追加対応した）
+      - `GroupChatCreatePage`/`Screen`：**メンバー個別選択UIを新規実装**（従来はグループ名入力欄
+        のみで、メンバーを選ぶ手段自体が無くグループが作成不可能だった）。`memberMatchesQuery`で
+        検索できるチェックボックス一覧を追加し、`createRoom({isGroup: true, ...})`に接続。
+        「メンバーカテゴリから一括選択」は既存のTODOのまま対象外（個別選択のみで最低限機能させる
+        という計画通りのスコープ）
+    - テスト：infra側は`npm test --workspace infra`（101件）・`cdk synth`で確認。
+      `npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）を通過。ブラウザで
+      ログイン画面が正常表示され、コンソールエラーが無いことを確認済み（Cognito/AppSync未デプロイの
+      ためログイン後の画面群は実地確認できず、型チェック・ビルド通過のみで確認）
+    - **未検証**：実際のAppSyncに対するルーム一覧取得・作成・送信・購読・既読の動作。実デプロイが
+      必要（8a〜8dが一通り完了したため、次はユーザーにデプロイの可否を確認するタイミング）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -462,10 +529,12 @@ Phase 8b（3章31.）は**コミット済み・pushもユーザー指示で完�
   BulletinCategories/BulletinPosts/CalendarCategories/CalendarEvents/DutyTypes/ShiftTypes/
   MemberDailyStatus/DailyNoteは`orgApi`＋`OrgDataContext`（一部は各ページの直接fetch）経由で本物の
   APIから取得する（Phase 8b・8c、31./32.参照。未接続時は`mockData.ts`にフォールバック）。
-  **チャット関連（ChatRooms/Messages）だけがバックエンド未接続で残っている**（Phase 8d対象）
-- 検索・フィルタ・ソート・ヘッダー連携・リアクション・コメント投稿・チャットの`@`メンションなどの
-  フロントエンドロジック（いずれもローカルstateで完結。リロードで消える＝バックエンド未接続。
-  掲示板のリアクション・コメントはバックエンドにAPI自体が無くPhase 9まで対象外）
+  チャット（ChatRooms/Messages）も`chatClient`経由でAppSyncに接続済み（Phase 8d、33.参照）。
+  **これで全リソースがバックエンド接続済みになった**（掲示板コメント・チャット/掲示板の
+  リアクションのみPhase 9待ち、下記参照）
+- 検索・フィルタ・ソート・ヘッダー連携・コメント投稿などのフロントエンドロジック（いずれも
+  ローカルstateで完結。リロードで消える）。**リアクション（チャット・掲示板とも）と掲示板コメントは
+  バックエンドにAPI自体が無くPhase 9まで対象外**
 - チャット新着メッセージのプッシュ通知判定＋SNS発行ロジック（`pushNotification.ts`、27.参照）。
   forceNotify優先・メンション限定・デフォルト全員通知の3分岐、送信者除外まで実装・テスト済み
   （実際のモバイルプッシュ配信＝SNSトピック以降のAPNs/FCM接続は未実装）
@@ -480,16 +549,19 @@ Phase 8b（3章31.）は**コミット済み・pushもユーザー指示で完�
 - OrgLinks/BulletinCategories/BulletinPosts/CalendarCategories/CalendarEvents/DutyTypes/ShiftTypes/
   MemberDailyStatus/DailyNoteのREST接続（Phase 8c、32.参照）。**コードは実装済みだが実際のAPIへの
   疎通確認はまだできていない**
+- チャットのAppSync接続（Phase 8d、33.参照）。ルーム一覧取得・ルーム作成・メッセージ送信・購読・
+  既読を実装（infra側にルーム一覧取得クエリ・ルーム作成mutationを新規追加）。
+  **コードは実装済みだが実際のAppSyncへの疎通確認はまだできていない**
 
 ### 未実装（TODOコメントあり、501スタブ等）
-- Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装）
+- Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装、
+  実装自体は`onMessageStreamChange.ts`/`sendScheduled.ts`にあるが実際のチャット経由での動作確認は
+  Phase 8dでチャットが繋がったことで初めて可能になった。次にチャットを実デプロイした際に検証する）
 - 掲示板の新規投稿通知Lambda（`bulletin/notifyOnPost.ts`）の実際の送信ロジック（`console.log`のみのスタブのまま。
   チャット側の`pushNotification.ts`とは別ファイルで、Phase 5・6のどちらでも対応対象外だった）
-- リアクション/コメントの永続化API（掲示板コメント用のDynamoDBテーブルは未作成）
+- リアクション/コメントの永続化API（チャット・掲示板とものリアクション、掲示板コメント。
+  対応するDynamoDBテーブル・GraphQLスキーマ拡張・REST/AppSyncエンドポイントとも未作成、Phase 9対象）
 - Amazon Chime SDK Meeting/Attendee作成（音声通話は現状デモの着信画面遷移のみ）
-- AppSyncクライアント接続（チャット機能は全体がバックエンド未接続のまま。8a〜8c完了時点でも
-  チャット周りの画面はローカルstateのまま変更していない。バックエンドにもルーム一覧取得・
-  ルーム作成・リアクションのmutation/スキーマが無く、Phase 8dはinfra追加実装から始める必要がある）
 - 実際のモバイルプッシュ配信（SNSトピック以降のAPNs/FCM接続。チャット・カレンダーリマインドとも
   SNS発行までは実装済みだが、その先のデバイス配信は未接続）
 
@@ -531,6 +603,7 @@ Phase 8b（3章31.）は**コミット済み・pushもユーザー指示で完�
 | Web/Mobile: 認証状態管理（Amplifyラップ） | `apps/web/src/context/AuthContext.tsx` / `apps/mobile/src/context/AuthContext.tsx` |
 | Web/Mobile: Users/Roles/MemberCategories APIクライアント（Phase 8b） | `apps/web/src/api/orgApi.ts` / `apps/mobile/src/api/orgApi.ts` |
 | Web/Mobile: Users/Roles/MemberCategories一括取得・全画面配布（Phase 8b） | `apps/web/src/context/OrgDataContext.tsx` / `apps/mobile/src/context/OrgDataContext.tsx` |
+| Web/Mobile: チャットAppSyncクライアント（Phase 8d） | `apps/web/src/api/chatClient.ts` / `apps/mobile/src/api/chatClient.ts` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ（4タブ：チャット/掲示板/カレンダー/メニュー） | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: メニュー画面（メンバー/シフト管理/リンク集/個人設定/管理者設定への導線） | `apps/web/src/pages/MenuPage.tsx` |
@@ -553,36 +626,42 @@ Phase 8b（3章31.）は**コミット済み・pushもユーザー指示で完�
 計画ファイルの元々の6フェーズ＋Phase7は完了済み。ここからは残っている大物5点をPhase 8〜12として
 再整理したもの（詳細版は
 `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`のパートB参照）。
-**Phase 8が他の全フェーズを実質的にブロックする**ため最優先。Phase 9〜12はPhase 8完了後であれば
-互いに強い依存関係は無く、着手順はユーザーの優先度判断で決めてよい。
+**Phase 8（8a〜8d）が完了し、他の全フェーズをブロックしていた最優先事項は解消済み**。
+Phase 9〜12は互いに強い依存関係は無く、着手順はユーザーの優先度判断で決めてよい。
 
-- **Phase 8: Cognito認証・AppSyncクライアント接続**（最優先・最大規模。4ステップ「8a: 認証基盤」
-  「8b: REST 1リソースだけ疎通確認」「8c: 残りのリソースへ展開」「8d: チャットのAppSync接続」に細分化）
+- **Phase 8: Cognito認証・AppSync/RESTクライアント接続 — 全ステップ完了**（4ステップ
+  「8a: 認証基盤」「8b: REST 1リソースだけ疎通確認」「8c: 残りのリソースへ展開」
+  「8d: チャットのAppSync接続」）
   - **8a（認証基盤）：コード実装完了**（詳細は3章30.参照）。ダミーのログイン画面を実際のAmplify＋
     Cognito認証に置き換え、`mockCurrentUserId`を参照していた18ファイル全てを実際の認証ユーザーIDに
     置き換えた。AdminPageに管理者によるアカウント発行（Cognitoアカウント作成＋仮パスワード発行）・
-    ログイン状況確認・パスワード再発行のUIも実装済み。ただし**実際のCognitoへのデプロイはまだ行っておらず、
-    本物のログインの動作確認はできていない**
+    ログイン状況確認・パスワード再発行のUIも実装済み
   - **8b（Users/Roles/MemberCategories接続）：コード実装完了**（詳細は3章31.参照）。
     `orgApi.ts`＋`OrgDataContext`を新設し、web 9画面・mobile 9画面の`mockMembers`/`mockRoles`/
     `mockMemberCategories`直接参照を解消。AdminPageのロール・メンバーカテゴリタブに追加・改名・削除UIを
-    新設しAPI接続、ユーザー権限編集もPUT接続した。ただし**実デプロイ前のため実際のAPI疎通確認はできていない**
+    新設しAPI接続、ユーザー権限編集もPUT接続した
   - **8c（残りのリソース接続：OrgLinks/掲示板/カレンダー/シフト）：コード実装完了**（詳細は3章32.参照）。
     `orgApi.ts`・`OrgDataContext`をさらに拡張し、9リソース分のREST接続を完了。AdminPageに
-    リンク集・掲示板カテゴリー・カレンダーカテゴリー・当番種別・シフト種別の管理UIを新設。
-    ただし**実デプロイ前のため実際のAPI疎通確認はできていない**
-  - **8d（チャットのAppSync接続）：未着手**。8a〜8cと異なりバックエンドに構造的な欠落があり
-    （ルーム一覧取得クエリ・ルーム作成mutation・リアクション用mutation/スキーマフィールドが
-    いずれも未実装）、フロント接続だけでは完結しない。infra追加実装（`ChatRoomsTable`への
-    GSI追加、新規リゾルバ、スキーマ拡張）から着手する必要がある
+    リンク集・掲示板カテゴリー・カレンダーカテゴリー・当番種別・シフト種別の管理UIを新設
+  - **8d（チャットのAppSync接続）：コード実装完了**（詳細は3章33.参照）。8a〜8cと異なり
+    バックエンドに構造的な欠落があった（ルーム一覧取得クエリ・ルーム作成mutationが未実装）ため、
+    infra追加実装（スキーマ拡張・新規リゾルバ2件、GSIは追加せず既存の全件スキャン方式に揃えた）
+    から着手。`chatClient.ts`を新設しチャット4画面＋メンバー一覧の「チャット」ボタンを接続。
+    グループ作成画面には従来存在しなかったメンバー個別選択UIも新設した。
+    リアクション永続化のみPhase 9へ先送り（スキーマ未対応）
+  - **Phase 8全体を通して実際のAWS（Cognito/AppSync/API Gateway）へのデプロイはまだ一度も
+    行っていない**ため、本物のログイン・API疎通・リアルタイム購読の動作確認はできていない。
+    次のアクションはユーザーへのデプロイ可否確認
   `infra/lib/constructs/auth-construct.ts`のCognito設定・`infra/lambda/common/cognito.ts`・
   Web/Mobileの`AuthContext.tsx`は実装済み。詳細は
   `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`の
   「Phase 8a: 認証基盤 実装計画」、`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`
-  （Phase 8b実装計画）、および本ファイル3章32.（Phase 8c、独立した計画ファイルなし）を参照。
+  （Phase 8b計画を8d用に上書き再利用したもの。現在の内容は8d）、および本ファイル3章32.
+  （Phase 8c、独立した計画ファイルなし）を参照。
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
   掲示板コメント用の新規DynamoDBテーブル・CRUD Lambdaを追加し、ローカルstateのみの
-  `toggleReaction`等をAPI接続に置き換える。`bulletin/notifyOnPost.ts`（現状`console.log`のみの
+  `toggleReaction`等をAPI接続に置き換える（**チャットのリアクションも対象**、`Message`型への
+  スキーマフィールド追加＋mutation新設が必要）。`bulletin/notifyOnPost.ts`（現状`console.log`のみの
   スタブ）の実装もここに含める。投稿者・リアクションした人の識別に実ユーザーIDが要るためPhase 8後
 - **Phase 10: 予約送信の実スケジューリング**（Phase 8後）
   `onMessageStreamChange.ts`（Streams→EventBridge Scheduler登録）・`sendScheduled.ts`

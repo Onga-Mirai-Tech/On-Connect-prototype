@@ -1,28 +1,51 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { UserPlus, Users, User, Search } from "lucide-react";
-import { mockChatRooms, mockMessages } from "@on-connect/shared";
+import { mockChatRooms, mockMessages, type ChatRoom, type Message } from "@on-connect/shared";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { chatClient } from "../api/chatClient";
 
 /**
  * チャット一覧画面（7章 3番）：1対1／グループチャットの一覧、既読／未読表示
  * 本文検索：入力したキーワードを含むメッセージがあるルームのみに絞り込み、
- * 一致したメッセージのスニペットを表示する（現状はダミーデータに対するクライアント側フィルタ）。
+ * 一致したメッセージのスニペットを表示する（現状は取得済みメッセージへのクライアント側フィルタ）。
  * TODO: AppSync側にメッセージ検索クエリを実装し、サーバーサイド検索に置き換える。
+ * Phase 8d：ルーム一覧・各ルームのメッセージをAppSyncから取得（失敗時はダミーデータにフォールバック）。
  */
 export function ChatListPage() {
   const { currentUserId } = useAuth();
   const { members } = useOrgData();
   const [query, setQuery] = useState("");
+  const [rawRooms, setRawRooms] = useState<ChatRoom[]>([]);
+  const [messagesByRoom, setMessagesByRoom] = useState<Record<string, Message[]>>({});
 
-  const rooms = mockChatRooms
-    .filter((room) => room.memberUserIds.includes(currentUserId ?? ""))
+  useEffect(() => {
+    const userId = currentUserId;
+    if (!userId) return;
+    (async () => {
+      try {
+        const fetchedRooms = await chatClient.listChatRoomsForUser(userId);
+        const entries = await Promise.all(
+          fetchedRooms.map(
+            async (room) => [room.roomId, await chatClient.listMessagesForRoom(room.roomId)] as const,
+          ),
+        );
+        setRawRooms(fetchedRooms);
+        setMessagesByRoom(Object.fromEntries(entries));
+      } catch {
+        setRawRooms(mockChatRooms.filter((r) => r.memberUserIds.includes(userId)));
+        setMessagesByRoom(mockMessages);
+      }
+    })();
+  }, [currentUserId]);
+
+  const rooms = rawRooms
     .map((room) => {
       const otherMemberId = room.memberUserIds.find((id) => id !== currentUserId);
       const otherMember = members.find((m) => m.userId === otherMemberId);
       const displayName = room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "不明なメンバー";
-      const roomMessages = mockMessages[room.roomId] ?? [];
+      const roomMessages = messagesByRoom[room.roomId] ?? [];
       const lastMessage = roomMessages[roomMessages.length - 1];
 
       if (!query.trim()) {

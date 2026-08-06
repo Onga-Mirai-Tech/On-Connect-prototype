@@ -5,6 +5,7 @@ import { mockChatRooms, memberMatchesQuery } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { chatClient } from "../api/chatClient";
 
 /**
  * メンバー一覧画面（下部タブ）
@@ -16,16 +17,32 @@ export function MembersPage() {
   const { members, roles, memberCategories } = useOrgData();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [creatingUserId, setCreatingUserId] = useState<string | null>(null);
 
   const categoryName = (categoryId: string) =>
     memberCategories.find((c) => c.categoryId === categoryId)?.name ?? "";
 
-  const handleChat = (memberId: string) => {
-    // 既存の1対1ルームがあればそれを開き、無ければ仮のルームIDへ遷移する
-    const existingRoom = mockChatRooms.find(
-      (r) => !r.isGroup && r.memberUserIds.includes(currentUserId ?? "") && r.memberUserIds.includes(memberId),
-    );
-    navigate(`/chat/${existingRoom?.roomId ?? `dm-${memberId}`}`);
+  const handleChat = async (memberId: string) => {
+    // 既存の1対1ルームがあればそれを開き、無ければ新規作成する（Phase 8d、失敗時は仮のルームIDへ遷移）
+    if (!currentUserId) return;
+    setCreatingUserId(memberId);
+    try {
+      const rooms = await chatClient.listChatRoomsForUser(currentUserId);
+      const existingRoom = rooms.find((r) => !r.isGroup && r.memberUserIds.includes(memberId));
+      if (existingRoom) {
+        navigate(`/chat/${existingRoom.roomId}`);
+        return;
+      }
+      const created = await chatClient.createRoom({ isGroup: false, memberUserIds: [currentUserId, memberId] });
+      navigate(`/chat/${created.roomId}`);
+    } catch {
+      const existingRoom = mockChatRooms.find(
+        (r) => !r.isGroup && r.memberUserIds.includes(currentUserId) && r.memberUserIds.includes(memberId),
+      );
+      navigate(`/chat/${existingRoom?.roomId ?? `dm-${memberId}`}`);
+    } finally {
+      setCreatingUserId(null);
+    }
   };
 
   const handleCall = (memberName: string) => {
@@ -93,6 +110,7 @@ export function MembersPage() {
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
                         onClick={() => handleChat(member.userId)}
+                        disabled={creatingUserId === member.userId}
                         style={{ display: "flex", alignItems: "center", gap: 4 }}
                       >
                         <MessageCircle size={14} /> チャット

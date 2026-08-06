@@ -1,32 +1,56 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, TextInput, FlatList, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockChatRooms, mockMessages } from "@on-connect/shared";
+import { mockChatRooms, mockMessages, type ChatRoom, type Message } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { chatClient } from "../api/chatClient";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatList">;
 
 /**
  * チャット一覧画面（7章 3番）：1対1／グループチャットの一覧、既読／未読表示
  * 本文検索：入力したキーワードを含むメッセージがあるルームのみに絞り込む。
- * TODO: AppSync側にメッセージ検索クエリを実装し、サーバーサイド検索に置き換える（現状はダミーデータ表示）。
+ * TODO: AppSync側にメッセージ検索クエリを実装し、サーバーサイド検索に置き換える（現状は取得済み
+ * メッセージへのクライアント側フィルタ）。
+ * Phase 8d：ルーム一覧・各ルームのメッセージをAppSyncから取得（失敗時はダミーデータにフォールバック）。
  */
 export function ChatListScreen({ navigation }: Props) {
   const { currentUserId } = useAuth();
   const { members } = useOrgData();
   const [query, setQuery] = useState("");
+  const [rawRooms, setRawRooms] = useState<ChatRoom[]>([]);
+  const [messagesByRoom, setMessagesByRoom] = useState<Record<string, Message[]>>({});
 
-  const rooms = mockChatRooms
-    .filter((room) => room.memberUserIds.includes(currentUserId ?? ""))
+  useEffect(() => {
+    const userId = currentUserId;
+    if (!userId) return;
+    (async () => {
+      try {
+        const fetchedRooms = await chatClient.listChatRoomsForUser(userId);
+        const entries = await Promise.all(
+          fetchedRooms.map(
+            async (room) => [room.roomId, await chatClient.listMessagesForRoom(room.roomId)] as const,
+          ),
+        );
+        setRawRooms(fetchedRooms);
+        setMessagesByRoom(Object.fromEntries(entries));
+      } catch {
+        setRawRooms(mockChatRooms.filter((r) => r.memberUserIds.includes(userId)));
+        setMessagesByRoom(mockMessages);
+      }
+    })();
+  }, [currentUserId]);
+
+  const rooms = rawRooms
     .map((room) => {
       const otherMemberId = room.memberUserIds.find((id) => id !== currentUserId);
       const otherMember = members.find((m) => m.userId === otherMemberId);
       const displayName = room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "不明なメンバー";
-      const roomMessages = mockMessages[room.roomId] ?? [];
+      const roomMessages = messagesByRoom[room.roomId] ?? [];
       const lastMessage = roomMessages[roomMessages.length - 1];
 
       if (!query.trim()) {

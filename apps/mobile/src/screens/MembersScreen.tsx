@@ -8,6 +8,7 @@ import type { MenuStackParamList, HomeTabParamList, RootStackParamList } from ".
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { chatClient } from "../api/chatClient";
 
 type Props = NativeStackScreenProps<MenuStackParamList, "Members">;
 
@@ -20,19 +21,33 @@ export function MembersScreen({ navigation }: Props) {
   const { currentUserId } = useAuth();
   const { members, roles, memberCategories } = useOrgData();
   const [query, setQuery] = useState("");
+  const [creatingUserId, setCreatingUserId] = useState<string | null>(null);
 
   const categoryName = (categoryId: string) =>
     memberCategories.find((c) => c.categoryId === categoryId)?.name ?? "";
 
-  const handleChat = (memberId: string) => {
-    const existingRoom = mockChatRooms.find(
-      (r) => !r.isGroup && r.memberUserIds.includes(currentUserId ?? "") && r.memberUserIds.includes(memberId),
-    );
+  const handleChat = async (memberId: string) => {
+    if (!currentUserId) return;
     const tabNavigation = navigation.getParent<BottomTabNavigationProp<HomeTabParamList>>();
-    tabNavigation?.navigate("ChatTab", {
-      screen: "ChatRoom",
-      params: { roomId: existingRoom?.roomId ?? `dm-${memberId}` },
-    });
+    setCreatingUserId(memberId);
+    try {
+      const rooms = await chatClient.listChatRoomsForUser(currentUserId);
+      const existingRoom = rooms.find((r) => !r.isGroup && r.memberUserIds.includes(memberId));
+      const roomId = existingRoom
+        ? existingRoom.roomId
+        : (await chatClient.createRoom({ isGroup: false, memberUserIds: [currentUserId, memberId] })).roomId;
+      tabNavigation?.navigate("ChatTab", { screen: "ChatRoom", params: { roomId } });
+    } catch {
+      const existingRoom = mockChatRooms.find(
+        (r) => !r.isGroup && r.memberUserIds.includes(currentUserId) && r.memberUserIds.includes(memberId),
+      );
+      tabNavigation?.navigate("ChatTab", {
+        screen: "ChatRoom",
+        params: { roomId: existingRoom?.roomId ?? `dm-${memberId}` },
+      });
+    } finally {
+      setCreatingUserId(null);
+    }
   };
 
   const handleCall = (memberName: string) => {
@@ -89,7 +104,11 @@ export function MembersScreen({ navigation }: Props) {
               </View>
               {!isSelf && (
                 <View style={styles.actions}>
-                  <Pressable onPress={() => handleChat(item.userId)} style={styles.actionButton}>
+                  <Pressable
+                    onPress={() => handleChat(item.userId)}
+                    disabled={creatingUserId === item.userId}
+                    style={styles.actionButton}
+                  >
                     <Ionicons name="chatbubble-outline" size={18} color={colors.brandDark} />
                   </Pressable>
                   <Pressable onPress={() => handleCall(item.displayName)} style={styles.actionButton}>

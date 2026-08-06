@@ -56,6 +56,44 @@ export class ChatConstruct extends Construct {
       responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
     });
 
+    // 自分が参加しているルーム一覧（Phase 8d）。GSIは追加せず全件スキャン+フィルタで済ませる
+    // （dailyReminder.tsがCalendarEventsTableを全件スキャンしている前例と同じ、小規模組織向けの簡略化）
+    chatRoomsDS.createResolver("ListChatRoomsForUserResolver", {
+      typeName: "Query",
+      fieldName: "listChatRoomsForUser",
+      requestMappingTemplate: appsync.MappingTemplate.fromString(`{
+  "version": "2018-05-29",
+  "operation": "Scan",
+  "filter": {
+    "expression": "contains(memberUserIds, :userId)",
+    "expressionValues": { ":userId": $util.dynamodb.toDynamoDBJson($ctx.args.userId) }
+  }
+}`),
+      responseMappingTemplate: appsync.MappingTemplate.fromString(
+        "$util.toJson($ctx.result.items)",
+      ),
+    });
+
+    // ルーム作成（1対1・グループ共通、Phase 8d）。1:1の重複作成防止はフロント側の責務
+    chatRoomsDS.createResolver("CreateRoomResolver", {
+      typeName: "Mutation",
+      fieldName: "createRoom",
+      requestMappingTemplate: appsync.MappingTemplate.fromString(`{
+  "version": "2018-05-29",
+  "operation": "PutItem",
+  "key": {
+    "roomId": $util.dynamodb.toDynamoDBJson($util.autoId())
+  },
+  "attributeValues": {
+    "isGroup": $util.dynamodb.toDynamoDBJson($ctx.args.input.isGroup),
+    "name": $util.dynamodb.toDynamoDBJson($ctx.args.input.name),
+    "memberUserIds": $util.dynamodb.toDynamoDBJson($ctx.args.input.memberUserIds),
+    "createdAt": $util.dynamodb.toDynamoDBJson($util.time.nowISO8601())
+  }
+}`),
+      responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+    });
+
     messagesDS.createResolver("ListMessagesForRoomResolver", {
       typeName: "Query",
       fieldName: "listMessagesForRoom",

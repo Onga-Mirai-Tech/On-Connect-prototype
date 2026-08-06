@@ -51,15 +51,25 @@ input MarkReadInput {
   userId: ID!
 }
 
+input CreateRoomInput {
+  isGroup: Boolean!
+  name: String
+  memberUserIds: [ID!]!
+}
+
 type Query {
   getChatRoom(roomId: ID!): ChatRoom
   listMessagesForRoom(roomId: ID!, limit: Int, nextToken: String): [Message!]!
+  """自分が参加しているルーム一覧を取得する（ChatRoomsTableを全件スキャンしフィルタする、Phase 8d）"""
+  listChatRoomsForUser(userId: ID!): [ChatRoom!]!
 }
 
 type Mutation {
   sendMessage(input: SendMessageInput!): Message!
   markMessageRead(input: MarkReadInput!): Message!
   cancelScheduledMessage(roomId: ID!, messageId: ID!): Message!
+  """1対1・グループ問わずルームを新規作成する（Phase 8d）"""
+  createRoom(input: CreateRoomInput!): ChatRoom!
 }
 
 type Subscription {
