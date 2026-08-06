@@ -18,6 +18,7 @@ import {
   type ShiftType,
 } from "@on-connect/shared";
 import { orgApi, type AdminUser } from "../api/orgApi";
+import { useAuth } from "./AuthContext";
 
 interface OrgDataContextValue {
   members: AdminUser[];
@@ -41,6 +42,7 @@ const OrgDataContext = createContext<OrgDataContextValue | undefined>(undefined)
  * BulletinPosts/CalendarEvents/MemberDailyStatus/DailyNoteのような「本体データ」はここに含めない。
  */
 export function OrgDataProvider({ children }: { children: ReactNode }) {
+  const { currentUserId } = useAuth();
   const [members, setMembers] = useState<AdminUser[]>(mockMembers);
   const [roles, setRoles] = useState<Role[]>(mockRoles);
   const [memberCategories, setMemberCategories] = useState<MemberCategory[]>(mockMemberCategories);
@@ -92,7 +94,10 @@ export function OrgDataProvider({ children }: { children: ReactNode }) {
       );
       setIsLoading(false);
     })();
-  }, [refetchMembers]);
+    // currentUserIdを依存に含めるのが重要：ログイン直後はAmplifyのセッション確立前に
+    // このProviderがマウントされ最初のfetchが認証エラーで全てモックにフォールバックすることがあり、
+    // ログイン完了（currentUserIdが確定）時にも再取得しないと、その後ずっとモックのまま固定されてしまう
+  }, [currentUserId, refetchMembers]);
 
   return (
     <OrgDataContext.Provider

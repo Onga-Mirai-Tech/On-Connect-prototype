@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8完了・初回AWSデプロイ＋実機検証済み）
+# On-Connect 実装進捗まとめ（〜2026-08-07時点、Phase 8完了・初回AWSデプロイ＋web/mobile実機検証済み）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -610,6 +610,77 @@ Phase 8b（3章31.）＋Phase 8c（3章32.）＋Phase 8d（3章33.）は**コミ
       （このMacにフルのXcodeが入っておらず`npx expo start --ios`が失敗するため未実施。
       ユーザーにXcodeインストール＋`sudo xcode-select`実行を依頼済み、次回セッションで再開）
     - テスト：`npm test --workspace infra`（101件）・`npm run build --workspace apps/web`・
+      `npx tsc --noEmit`（mobile）で確認
+36. **【モバイル（Expo）初のシミュレータ実機確認＋バグ4件発見・修正】**：ユーザーがXcodeを
+    インストールし`sudo xcode-select`を実行後、iOSシミュレータ（iPhone 17、iOS 26.5）で
+    On-Connectモバイルアプリを**このプロジェクトで初めて**実際に起動・操作した。モバイルは
+    これまで`npx tsc --noEmit`の型チェックのみで実機確認は一度も行われていなかったため、
+    起動するだけで4件の実在するバグを発見・修正することになった。
+    - **バグ⑤モノレポでのMetroエントリポイント解決失敗**：npm workspacesで`expo`が
+      ワークスペースルートの`node_modules`にホイストされるため、`package.json`の
+      `"main": "node_modules/expo/AppEntry.js"`（相対パスのリテラル指定）が
+      `apps/mobile/node_modules/expo/...`を探しに行ってしまい`ConfigError: Cannot resolve
+      entry file`で起動不能だった。さらに`"main": "expo/AppEntry.js"`（bare specifierとして
+      Node解決に任せる形）に変更しても、`expo/AppEntry.js`自身が`import App from '../../App'`
+      という「自分のファイル位置からの相対パス」でアプリ本体を読み込む実装のため、ホイスト先の
+      `<リポジトリルート>/node_modules/expo/`を基準に`<リポジトリルート>/App`を探してしまい
+      根本的に解決不能（`apps/mobile/App.tsx`には辿り着けない）と判明。Expo公式のモノレポ対応
+      パターンに従い、`apps/mobile/index.js`を新設して`import App from "./App"`を明示的に
+      `registerRootComponent`する形に変更し、`main`を`"index.js"`に。あわせて
+      `apps/mobile/metro.config.js`を新設し`watchFolders`／`nodeModulesPaths`にワークスペース
+      ルートを追加（モジュール解決自体はこちらが本題だが、上記のエントリポイント解決は
+      metro.config.jsではなく`main`フィールド自体の問題だったため両方の対応が必要だった）
+    - **バグ⑥`@react-native-community/netinfo`の依存漏れ**：`aws-amplify/api`
+      （Phase 8dで導入、AppSyncクライアント用）が内部で参照する`ReachabilityMonitor`が
+      `@react-native-community/netinfo`を要求するが、`apps/mobile/package.json`に追加されて
+      いなかったため`Unable to resolve module @react-native-community/netinfo`でバンドル
+      エラーになっていた。`npx expo install @react-native-community/netinfo`で追加
+    - **バグ⑦`react-native-get-random-values`はExpo Goでは動作しない（ネイティブモジュール）**：
+      上記2件を直しアプリの起動自体には成功したが、ログイン（Cognito SRP認証）を試みると
+      `Unknown: An unknown error has occurred.`という空のエラーで必ず失敗した。
+      Expo Go（App Store配布の汎用クライアント）は事前ビルドされた固定のネイティブモジュール
+      セットしか持たず、サードパーティのネイティブコード（`react-native-get-random-values`が
+      提供するネイティブ`crypto.getRandomValues`実装）は含まれないため、SRP認証の乱数生成が
+      サイレントに失敗していたと判明（Phase 8aの時点で「RN 0.74.5への対応のため
+      `react-native-get-random-values`は1.11.0を使う」という記録はあったが、Expo Goでの
+      動作可否は検証されていなかった）。`npx expo run:ios`でカスタム開発ビルド（Dev Client、
+      ネイティブモジュールを実際にコンパイルしてリンクしたもの）を作成したところログインが
+      成功することを確認した。`apps/mobile/package.json`の`ios`/`android`スクリプトを
+      `expo start --ios/--android`（Expo Go前提）から`expo run:ios`/`expo run:android`
+      （カスタム開発ビルド前提）に変更した。**今後モバイルを実機/シミュレータで確認する際は
+      必ず`npm run ios --workspace apps/mobile`（内部的に`expo run:ios`）でカスタム開発
+      ビルドを使うこと。Expo Goでは認証が機能しない**。なお`apps/mobile/ios`・`android`
+      ディレクトリは`expo prebuild`が生成する成果物で`.gitignore`済み（コミット対象外）。
+      初回の`pod install`は環境のLANG未設定（`LANG=en_US.UTF-8`が必要、CocoaPods+Rubyの
+      既知の非ASCII文字処理エラー`Encoding::CompatibilityError`が起きる）でも一度失敗した
+      （このホスト固有の問題で、修正はコード側ではなく環境変数設定）
+    - **バグ⑧`OrgDataContext`の初回一括取得がログイン確立前に走り、以後ずっとモックのまま**：
+      上記を全て解消してログインには成功したが、ログイン後の画面（掲示板のカテゴリーフィルタ、
+      シフト管理のメンバー行）が実データ（`テスト管理者`1名、`お知らせ`カテゴリーのみ）ではなく
+      モックデータ（9人のダミーメンバー、`お知らせ`/`行事`/`緊急連絡`の3カテゴリー）のままに
+      なっていることに気づいた。原因は`OrgDataProvider`（web/mobile共通の設計）が
+      アプリマウント時に一度だけ8リソースを取得する`useEffect`の依存配列が空（正確には
+      `useCallback`の参照のみで実質固定）だったこと。この`Provider`はログイン前の画面
+      （ログイン画面自体）でも常にマウントされているため、初回マウント時点でまだAmplifyの
+      セッションが確立していないと`fetchAuthSession()`が有効なトークンを返せず8件とも認証
+      エラーでモックにフォールバックし、**ログインが後から成功してもこの`useEffect`は
+      二度と再実行されないため、モックに固定されたままアプリを再起動するまで戻らない**という
+      構造的な不具合だった（web版もこれまでは既にログイン済みのセッションが残ったままの
+      リロードでしか動作確認しておらず、「ログイン画面から新規にログインした直後」という
+      経路を今回モバイルで初めて実地検証したことで顕在化した。理論上はwebでも同じ条件
+      （ブラウザのローカルストレージを空にした状態からの初回ログイン）で再現する可能性がある）。
+      `OrgDataContext.tsx`（web/mobile）に`useAuth()`の`currentUserId`を`useEffect`の依存に
+      追加し、ログイン完了（`currentUserId`が確定）時にも再取得が走るよう修正
+    - **確認済み**（カスタム開発ビルド、実機同然のiOSシミュレータで）：ログイン画面の表示、
+      Cognitoログイン（`staff01`）成功、ログイン後のヘッダー表示（`テスト管理者`）、
+      チャット・掲示板・メニュー・シフト管理の各タブの表示、掲示板の実投稿（web側で作成した
+      「実機確認テスト投稿3」）とカテゴリーフィルタの実データ表示、シフト管理の実メンバー
+      （`テスト管理者`1名）表示。いずれもモックへのフォールバックなく実際のAPIからのデータで
+      あることを確認済み
+    - **未確認のまま残っているもの**：メッセージ送信・掲示板投稿作成等の書き込み操作を
+      モバイルの実機UIから行う一連の流れ（今回は起動・表示・ログインの確認が中心で、
+      書き込み系操作はweb側で既に確認済みのため対象外とした）、Android実機/エミュレータでの確認
+    - テスト：修正後`npm test --workspace infra`（101件）・`npm run build --workspace apps/web`・
       `npx tsc --noEmit`（mobile）で確認
 
 ## 4. 現在のダミー登録ユーザーの設定
