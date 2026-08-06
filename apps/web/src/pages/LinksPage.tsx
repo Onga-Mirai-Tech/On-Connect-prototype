@@ -1,11 +1,11 @@
 import { ExternalLink } from "lucide-react";
-import { mockOrgLinks } from "@on-connect/shared";
 import { colors } from "../theme/colors";
+import { useOrgData } from "../context/OrgDataContext";
 
 /** リンク集画面（7章 9番）：カテゴリー別一覧、タップで外部サイトを開く（5.5） */
 export function LinksPage() {
-  // TODO: GET /org-links から取得する（現状はダミーデータ表示）
-  const links = [...mockOrgLinks].sort((a, b) => a.sortOrder - b.sortOrder);
+  const { orgLinks } = useOrgData();
+  const links = [...orgLinks].sort((a, b) => a.sortOrder - b.sortOrder);
   const categories = Array.from(new Set(links.map((l) => l.category ?? "その他")));
 
   return (

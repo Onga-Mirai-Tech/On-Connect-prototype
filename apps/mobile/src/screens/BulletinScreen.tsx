@@ -1,16 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, TextInput, FlatList, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockBulletinPosts, mockBulletinCategories } from "@on-connect/shared";
+import { mockBulletinPosts, type BulletinPost } from "@on-connect/shared";
 import type { BulletinStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
 
 type Props = NativeStackScreenProps<BulletinStackParamList, "BulletinList">;
 
 const stripHtml = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-const categoryName = (categoryId: string | undefined) =>
-  mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
 
 /**
  * 掲示板一覧画面（7章 6番）：カテゴリー別フィルター（5.3.1）＋本文検索
@@ -18,9 +18,24 @@ const categoryName = (categoryId: string | undefined) =>
  * TODO: GET /bulletin-posts にサーバーサイド検索を実装する（現状はクライアント側フィルタ）。
  */
 export function BulletinScreen({ navigation }: Props) {
+  const { bulletinCategories } = useOrgData();
+  const categoryName = (categoryId: string | undefined) =>
+    bulletinCategories.find((c) => c.categoryId === categoryId)?.name;
   const [categoryId, setCategoryId] = useState("all");
   const [query, setQuery] = useState("");
-  const posts = [...mockBulletinPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const [rawPosts, setRawPosts] = useState<BulletinPost[]>(mockBulletinPosts);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setRawPosts(await orgApi.listBulletinPosts());
+      } catch {
+        setRawPosts(mockBulletinPosts);
+      }
+    })();
+  }, []);
+
+  const posts = [...rawPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const filteredPosts = posts
     .filter((p) => categoryId === "all" || p.categoryId === categoryId)
     .filter((p) => {
@@ -50,7 +65,7 @@ export function BulletinScreen({ navigation }: Props) {
         >
           <Text style={categoryId === "all" ? styles.categoryActive : styles.category}>すべて</Text>
         </Pressable>
-        {mockBulletinCategories.map((c) => (
+        {bulletinCategories.map((c) => (
           <Pressable
             key={c.categoryId}
             onPress={() => setCategoryId(c.categoryId)}

@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, Pressable, ScrollView, TextInput, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   mockMemberDailyStatuses,
-  mockDutyTypes,
-  mockShiftTypes,
   mockDailyNotes,
   weekdayLabelForDate,
   holidayNameForDate,
+  type DutyType,
+  type ShiftType,
   type MemberDailyStatus,
   type DailyNote,
   type LeaveType,
@@ -16,6 +16,7 @@ import {
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
 
 const leaveLabel: Record<LeaveType, string> = { FULL: "休", AM: "午前休", PM: "午後休" };
 const leaveReasonLabel: Record<LeaveReason, string> = { REQUESTED: "希望休", ASSIGNED: "指定休" };
@@ -35,9 +36,6 @@ function countBy(values: string[]): Record<string, number> {
   return counts;
 }
 
-const activeDutyTypes = mockDutyTypes.filter((d) => d.isActive);
-const activeShiftTypes = mockShiftTypes.filter((s) => s.isActive);
-
 const CELL_WIDTH = 64;
 const SUMMARY_WIDTH = 44;
 const NAME_WIDTH = 88;
@@ -46,18 +44,18 @@ const NAME_WIDTH = 88;
  * シフト管理画面：休日・当番・シフトを月間グリッド（メンバー×日付）で表示する。
  * 編集はmanageShifts権限を持つ人のみ（本人の分も含め自己申告はできない）。閲覧は全員に開放。
  * ヘッダーに曜日・祝日、日付の下にメモ欄と当番人数の集計、右端にメンバー別の月間当番・シフト回数を表示する。
- * TODO: GET /member-daily-status?date=... / PUT /member-daily-status/{date}/{userId}、
- * GET /daily-notes/{date} / PUT /daily-notes/{date} をAPIに接続する（現状はダミーデータのローカルstateのみ）。
+ * Phase 8c：GET /member-daily-status?date=... / GET /daily-notes/{date} をAPIに接続。
+ * 両エンドポイントとも1日単位のみ対応のため、月表示のたびに日付ごとにループしてリクエストする。
  * 注：名前列は固定表示せず、行全体が横スクロールする簡易実装（Web版は名前列を固定表示）。
  */
 export function ShiftManagementScreen() {
-  const { currentUserId, currentUser } = useAuth();
-  const { members } = useOrgData();
+  const { currentUser } = useAuth();
+  const { members, dutyTypes, shiftTypes } = useOrgData();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [statuses, setStatuses] = useState(mockMemberDailyStatuses);
-  const [notes, setNotes] = useState(mockDailyNotes);
+  const [statuses, setStatuses] = useState<MemberDailyStatus[]>(mockMemberDailyStatuses);
+  const [notes, setNotes] = useState<DailyNote[]>(mockDailyNotes);
   const [editing, setEditing] = useState<{ userId: string; date: string } | null>(null);
   const [editingNoteDate, setEditingNoteDate] = useState<string | null>(null);
 
@@ -67,10 +65,30 @@ export function ShiftManagementScreen() {
   const days = Array.from({ length: dayCount }, (_, i) => i + 1);
   const monthDates = days.map((d) => dateKey(year, month, d));
 
+  const refetchMonth = async (dates: string[]) => {
+    try {
+      const statusLists = await Promise.all(dates.map((date) => orgApi.listMemberDailyStatusesForDate(date)));
+      const noteList = await Promise.all(dates.map((date) => orgApi.getDailyNote(date)));
+      setStatuses(statusLists.flat());
+      setNotes(noteList.filter((n) => n.note));
+    } catch {
+      setStatuses(mockMemberDailyStatuses);
+      setNotes(mockDailyNotes);
+    }
+  };
+
+  useEffect(() => {
+    refetchMonth(monthDates);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month]);
+
+  const activeDutyTypes = dutyTypes.filter((d) => d.isActive);
+  const activeShiftTypes = shiftTypes.filter((s) => s.isActive);
+
   const statusFor = (userId: string, date: string) => statuses.find((s) => s.userId === userId && s.date === date);
   const noteFor = (date: string) => notes.find((n) => n.date === date);
-  const shiftName = (id: string | undefined) => mockShiftTypes.find((s) => s.shiftTypeId === id)?.name;
-  const dutyName = (id: string) => mockDutyTypes.find((d) => d.dutyTypeId === id)?.name ?? id;
+  const shiftName = (id: string | undefined) => shiftTypes.find((s) => s.shiftTypeId === id)?.name;
+  const dutyName = (id: string) => dutyTypes.find((d) => d.dutyTypeId === id)?.name ?? id;
 
   // 日ごとの当番人数（当番タイプ別）
   const dutyCountsByDate: Record<string, Record<string, number>> = {};
@@ -108,47 +126,27 @@ export function ShiftManagementScreen() {
     }
   };
 
-  const handleSave = (userId: string, date: string, patch: Partial<MemberDailyStatus>) => {
-    // TODO: PUT /member-daily-status/{date}/{userId} を呼び出す（現状はローカルstateのみ）
-    setStatuses((prev) => {
-      const idx = prev.findIndex((s) => s.userId === userId && s.date === date);
-      const base: MemberDailyStatus = idx >= 0 ? prev[idx] : { date, userId, updatedAt: "", updatedBy: "" };
-      const updated: MemberDailyStatus = {
-        ...base,
-        ...patch,
-        updatedAt: new Date().toISOString(),
-        updatedBy: currentUserId ?? "",
-      };
-      const next = [...prev];
-      if (idx >= 0) next[idx] = updated;
-      else next.push(updated);
-      return next;
-    });
+  const handleSave = async (userId: string, date: string, patch: Partial<MemberDailyStatus>) => {
+    await orgApi.updateMemberDailyStatus(date, userId, patch);
+    await refetchMonth(monthDates);
     setEditing(null);
   };
 
-  const handleClear = (userId: string, date: string) => {
-    // TODO: DELETE /member-daily-status/{date}/{userId} を呼び出す
-    setStatuses((prev) => prev.filter((s) => !(s.userId === userId && s.date === date)));
+  const handleClear = async (userId: string, date: string) => {
+    await orgApi.deleteMemberDailyStatus(date, userId);
+    await refetchMonth(monthDates);
     setEditing(null);
   };
 
-  const handleSaveNote = (date: string, note: string) => {
-    // TODO: PUT /daily-notes/{date} を呼び出す（現状はローカルstateのみ）
-    setNotes((prev) => {
-      const idx = prev.findIndex((n) => n.date === date);
-      const updated: DailyNote = { date, note, updatedAt: new Date().toISOString(), updatedBy: currentUserId ?? "" };
-      const next = [...prev];
-      if (idx >= 0) next[idx] = updated;
-      else next.push(updated);
-      return next;
-    });
+  const handleSaveNote = async (date: string, note: string) => {
+    await orgApi.updateDailyNote(date, note);
+    await refetchMonth(monthDates);
     setEditingNoteDate(null);
   };
 
-  const handleClearNote = (date: string) => {
-    // TODO: DELETE /daily-notes/{date} を呼び出す
-    setNotes((prev) => prev.filter((n) => n.date !== date));
+  const handleClearNote = async (date: string) => {
+    await orgApi.deleteDailyNote(date);
+    await refetchMonth(monthDates);
     setEditingNoteDate(null);
   };
 
@@ -315,6 +313,8 @@ export function ShiftManagementScreen() {
           memberName={members.find((m) => m.userId === editing.userId)?.displayName}
           date={editing.date}
           status={statusFor(editing.userId, editing.date)}
+          dutyTypes={dutyTypes}
+          shiftTypes={shiftTypes}
           onSave={(patch) => handleSave(editing.userId, editing.date, patch)}
           onClear={() => handleClear(editing.userId, editing.date)}
           onClose={() => setEditing(null)}
@@ -381,6 +381,8 @@ function EditPanel({
   memberName,
   date,
   status,
+  dutyTypes,
+  shiftTypes,
   onSave,
   onClear,
   onClose,
@@ -388,6 +390,8 @@ function EditPanel({
   memberName: string | undefined;
   date: string;
   status: MemberDailyStatus | undefined;
+  dutyTypes: DutyType[];
+  shiftTypes: ShiftType[];
   onSave: (patch: Partial<MemberDailyStatus>) => void;
   onClear: () => void;
   onClose: () => void;
@@ -446,7 +450,7 @@ function EditPanel({
         <Pressable onPress={() => setAmShiftTypeId("")} style={[styles.chip, amShiftTypeId === "" && styles.chipActive]}>
           <Text>なし</Text>
         </Pressable>
-        {mockShiftTypes
+        {shiftTypes
           .filter((s) => s.isActive || s.shiftTypeId === amShiftTypeId)
           .map((s) => (
             <Pressable
@@ -463,7 +467,7 @@ function EditPanel({
         <Pressable onPress={() => setPmShiftTypeId("")} style={[styles.chip, pmShiftTypeId === "" && styles.chipActive]}>
           <Text>なし</Text>
         </Pressable>
-        {mockShiftTypes
+        {shiftTypes
           .filter((s) => s.isActive || s.shiftTypeId === pmShiftTypeId)
           .map((s) => (
             <Pressable
@@ -480,7 +484,7 @@ function EditPanel({
       </View>
       <Text style={styles.label}>当番（複数可）</Text>
       <View style={styles.chipRow}>
-        {mockDutyTypes
+        {dutyTypes
           .filter((d) => d.isActive || dutyTypeIds.includes(d.dutyTypeId))
           .map((d) => (
             <Pressable

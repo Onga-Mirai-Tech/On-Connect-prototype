@@ -1,27 +1,73 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { mockCalendarEvents, mockCalendarCategories } from "@on-connect/shared";
+import { mockCalendarEvents } from "@on-connect/shared";
 import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
+import { colors } from "../theme/colors";
 
 /**
  * カレンダー予定の作成・編集画面。全メンバーが作成・編集できる（バックエンド側に権限チェックは無い）。
- * TODO: 保存処理をAPIに接続する（現状はダミーデータの表示のみ、保存は一覧に戻るだけ）
+ * Phase 8c：保存処理をAPIに接続
  */
 export function CalendarEventEditPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
-  const { memberCategories } = useOrgData();
-  const existingEvent = eventId ? mockCalendarEvents.find((e) => e.eventId === eventId) : undefined;
+  const { memberCategories, calendarCategories } = useOrgData();
 
-  const [title, setTitle] = useState(existingEvent?.title ?? "");
-  const [description, setDescription] = useState(existingEvent?.description ?? "");
-  const [startAt, setStartAt] = useState(existingEvent?.startAt.slice(0, 16) ?? "");
-  const [endAt, setEndAt] = useState(existingEvent?.endAt.slice(0, 16) ?? "");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [visibleCategoryIds, setVisibleCategoryIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSave = () => {
-    // TODO: POST/PUT /calendar-events を呼び出して保存する
-    console.log("save calendar event", { title, description, startAt, endAt });
-    navigate(eventId ? `/calendar/${eventId}` : "/calendar");
+  useEffect(() => {
+    if (!eventId) {
+      setCategoryId(calendarCategories[0]?.categoryId ?? "");
+      return;
+    }
+    (async () => {
+      let event;
+      try {
+        event = await orgApi.getCalendarEvent(eventId);
+      } catch {
+        event = mockCalendarEvents.find((e) => e.eventId === eventId);
+      }
+      setTitle(event?.title ?? "");
+      setDescription(event?.description ?? "");
+      setStartAt(event?.startAt.slice(0, 16) ?? "");
+      setEndAt(event?.endAt.slice(0, 16) ?? "");
+      setCategoryId(event?.categoryId ?? calendarCategories[0]?.categoryId ?? "");
+      setVisibleCategoryIds(event?.visibleCategoryIds ?? []);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
+  }, [eventId]);
+
+  const toggleVisibleCategory = (categoryId: string) => {
+    setVisibleCategoryIds((prev) =>
+      prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId],
+    );
+  };
+
+  const handleSave = async () => {
+    setError("");
+    setSaving(true);
+    try {
+      const input = { title, description, startAt, endAt, categoryId: categoryId || undefined, visibleCategoryIds };
+      if (eventId) {
+        await orgApi.updateCalendarEvent(eventId, input);
+        navigate(`/calendar/${eventId}`);
+      } else {
+        const event = await orgApi.createCalendarEvent(input);
+        navigate(`/calendar/${event.eventId}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "予定の保存に失敗しました");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -66,8 +112,8 @@ export function CalendarEventEditPage() {
       </label>
       <label>
         表示カテゴリー：
-        <select defaultValue={existingEvent?.categoryId ?? mockCalendarCategories[0]?.categoryId}>
-          {mockCalendarCategories.map((c) => (
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          {calendarCategories.map((c) => (
             <option key={c.categoryId} value={c.categoryId}>
               {c.name}
             </option>
@@ -78,12 +124,17 @@ export function CalendarEventEditPage() {
         <h3>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</h3>
         {memberCategories.map((c) => (
           <label key={c.categoryId} style={{ display: "block" }}>
-            <input type="checkbox" defaultChecked={existingEvent?.visibleCategoryIds.includes(c.categoryId)} />
+            <input
+              type="checkbox"
+              checked={visibleCategoryIds.includes(c.categoryId)}
+              onChange={() => toggleVisibleCategory(c.categoryId)}
+            />
             {c.name}
           </label>
         ))}
       </div>
-      <button type="button" onClick={handleSave} style={{ marginTop: 12 }}>
+      {error && <p style={{ color: colors.danger, fontSize: 13 }}>{error}</p>}
+      <button type="button" onClick={handleSave} disabled={saving} style={{ marginTop: 12 }}>
         保存
       </button>
     </div>

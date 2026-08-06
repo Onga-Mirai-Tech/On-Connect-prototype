@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8b完了）
+# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8c完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -23,7 +23,11 @@
 Phase 8aの実装計画・決定事項は`/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`
 に記録済み**）。続けてPhase 8bとして、Users/Roles/MemberCategoriesのREST接続をweb/mobile全画面に展開した
 （**実装計画は`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`に記録済み**）。
-Phase 8a・8bともに実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作・API疎通の
+さらにPhase 8cとして、残りのREST接続（OrgLinks・掲示板カテゴリー/投稿本体・カレンダーカテゴリー/予定本体・
+当番シフト種別/日次記録）を一通り実装した。8cは事前調査（3エージェント並行）→タスク一覧化→
+ユーザーとの1点の設計判断（シフト月表示の取得方式）を経て順次実装した流れで、8a/8bのような
+独立した実装計画ファイルは作成していない（本ファイルの3章32.が詳細の記録）。
+Phase 8a〜8cともに実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作・API疎通の
 確認はできていない点に注意（8a〜8dが一通り終わった段階でユーザーに確認の上デプロイする既定方針）。
 
 ### 完了したフェーズ
@@ -47,10 +51,13 @@ Phase 8a・8bともに実際のCognitoへのデプロイをまだ行っていな
 - **Phase 8b（Users/Roles/MemberCategoriesのREST接続）**：コード実装完了。web build・mobile tscは
   通過済み（infra側の変更は無し）。ただし**実際のAPIへの疎通確認はできていない**（デプロイ前のため、
   未接続時のダミーデータへのフォールバック動作のみ確認）。詳細は下記3章31.参照
+- **Phase 8c（残りのREST接続：OrgLinks・掲示板・カレンダー・シフト）**：コード実装完了。web build・
+  mobile tscは通過済み（infra側の変更は無し）。ただし**実際のAPIへの疎通確認はできていない**
+  （デプロイ前のため、未接続時のダミーデータへのフォールバック動作のみ確認）。詳細は下記3章32.参照
 
-### Phase 8c〜12（未着手、優先順に記載。詳細は8章参照）
-- **Phase 8c〜8d: 残りのREST/AppSync接続**（8bで接続したUsers/Roles/MemberCategories以外の
-  リソース・チャットのAppSyncを順次接続する）
+### Phase 8d〜12（未着手、優先順に記載。詳細は8章参照）
+- **Phase 8d: チャットのAppSync接続**（8a〜8cと違い、バックエンドに構造的な欠落があるため
+  infra追加実装が必須。ルーム一覧取得・ルーム作成・リアクションのmutation/スキーマが未実装）
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
 - **Phase 10: 予約送信の実スケジューリング**（Phase 8後、既存インフラの実地検証が中心）
 - **Phase 11: Amazon Chime SDK音声通話実装**（Phase 8後、実機検証にAWSデプロイが必要）
@@ -59,9 +66,9 @@ Phase 8a・8bともに実際のCognitoへのデプロイをまだ行っていな
 ### 現在のコミット状況
 Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
 Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決定事項の記録＋Phase 8a（3章30.）＋
-Phase 8b（3章31.、この本ファイルの更新も含む）は**全てコミット済み・未push**（`git log`で確認すること）。
-作業ツリーはクリーン（コンテキストリセット直前に確認済み）。
-次回セッション開始時も念のため`git status`で確認すること。
+Phase 8b（3章31.）は**コミット済み・pushもユーザー指示で完了済み**（コミットハッシュ`3d799f0`まで、
+`git log`で確認すること）。Phase 8c（3章32.、この本ファイルの更新も含む）は**未コミット**
+（次回セッション開始時に`git status`で確認し、ユーザーに確認の上コミット・pushすること）。
 
 ### AWSデプロイの状況
 **Phase 1〜3の変更はAWSにデプロイされていない**（ローカルの`npm test`・`cdk synth`のみで確認）。
@@ -388,6 +395,48 @@ Phase 8b（3章31.、この本ファイルの更新も含む）は**全てコミ
       実地確認できず、型チェック・ビルド通過のみで確認。実デプロイ後に改めて確認する）
     - **未検証**：実際のAPIに対するUsers/Roles/MemberCategoriesの取得・作成・更新・削除の動作、
       ログイン後の各画面での実データ表示。実デプロイが必要（8a〜8d完了後にユーザーへ確認してから実施）
+32. **【Phase 8c】残りのREST接続：OrgLinks・掲示板・カレンダー・シフト**：
+    Users以外に残っていたリソース（OrgLinks、BulletinCategories/BulletinPosts、
+    CalendarCategories/CalendarEvents、DutyTypes/ShiftTypes/MemberDailyStatus/DailyNote）を
+    web/mobile全画面に接続した（infra側の変更は無し、全リソースとも8bより前の時点で
+    バックエンドは実装済みだった）。着手前に3エージェント並行でモック依存箇所とバックエンドAPI形状を
+    調査し、タスク一覧化してから実装した（8a/8bと違い独立した実装計画ファイルは作成していない）。
+    - `orgApi.ts`（web/mobile）に9リソース分のCRUD関数を追加（OrgLinks・BulletinCategories・
+      BulletinPosts・CalendarCategories・CalendarEvents・DutyTypes・ShiftTypes・
+      MemberDailyStatus・DailyNote）。mobileは元々書き込みUIがある箇所（BulletinPosts・
+      CalendarEvents・MemberDailyStatus・DailyNote）のみ書き込み関数を持つ（他は読み取り専用、
+      8bで確立した「mobileに管理画面が無いリソースは読み取り専用」方針を踏襲）
+    - `OrgDataContext`（web/mobile）を拡張：`orgLinks`・`bulletinCategories`・`calendarCategories`・
+      `dutyTypes`・`shiftTypes`を追加（roles/memberCategoriesと同様の「軽量な参照リスト、
+      アプリ起動時に一括取得」という性質のため）。一方`BulletinPosts`・`CalendarEvents`・
+      `MemberDailyStatus`・`DailyNote`は「本体データ」（一覧規模・絞り込み条件がページごとに違う）
+      としてOrgDataContextに含めず、各ページが自分でfetchする設計にした（一貫した使い分けの基準として
+      記録）
+    - **OrgLinks**：AdminPageのリンク集管理タブに追加・編集（インラインフォーム）・削除UIを新設
+      （タイトル・URL・カテゴリ・並び順の4項目）。`LinksPage`/`Screen`を`useOrgData().orgLinks`に接続
+    - **BulletinCategories/CalendarCategories**：AdminPageの該当タブを「名前だけの`<ul>`表示」から
+      Roles/MemberCategoriesと同じ追加・改名・削除UIに刷新。各種消費箇所（一覧・詳細・編集画面の
+      カテゴリー名解決・カテゴリー選択プルダウン）を接続
+    - **BulletinPosts/CalendarEvents本体**：一覧・詳細（+CalendarEventsは削除）・作成編集を接続。
+      BulletinPostsは投稿本体のみが対象で、**コメント・リアクションは対象外のまま**
+      （バックエンドにエンドポイント自体が存在せず、Phase 9で新規実装予定）。
+      CalendarEventsの`.ics`エクスポートは既存の`buildIcsForEvent`クライアント側生成のままで
+      変更不要（バックエンドの`/calendar-events/{id}/ical`は呼び出していない）
+    - **Shifts（DutyTypes/ShiftTypes/MemberDailyStatus/DailyNote）**：
+      - DutyTypes/ShiftTypesの管理UIをAdminPageに新規タブとして追加（従来はどこにも管理UIが
+        無かった）。名前・有効/無効チェックボックスを持つ追加・改名・削除UI
+      - `MemberDailyStatus`のGET・`DailyNote`のGETはバックエンドが1日単位のみ対応（範囲取得APIが
+        無い）。月表示のたびに日付ごとにループしてリクエストする方式で実装（ユーザーに確認済み、
+        最大31回/月のリクエストになるが数十名規模の小規模事業者では体感上問題ない想定。
+        範囲取得APIの新規追加＝infra変更は見送った）
+      - `ShiftManagementPage`/`Screen`：月切り替えのたびに`refetchMonth`関数で該当月の全日付を
+        再取得。セル編集・メモ編集の保存/削除操作後も同じ関数で再取得し画面に反映
+    - テスト：infra側の変更が無いため既存101件のテストに影響なし。`npm run build --workspace apps/web`・
+      `npx tsc --noEmit`（mobile）を通過。ブラウザでログイン画面が引き続き正常表示され、
+      コンソールエラーが出ないことを確認済み（Cognito未デプロイのためログイン後の画面群は
+      実地確認できず、型チェック・ビルド通過のみで確認）
+    - **未検証**：実際のAPIに対する各リソースの取得・作成・更新・削除の動作、ログイン後の各画面での
+      実データ表示。実デプロイが必要（8a〜8d完了後にユーザーへ確認してから実施）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -409,11 +458,14 @@ Phase 8b（3章31.、この本ファイルの更新も含む）は**全てコミ
   `manageCalendarCategories`/`manageShifts`）。**bulletin/calendar/shiftsのカテゴリー管理系は権限チェック
   済みだが、CalendarEvents本体・BulletinPosts本体には権限チェックが無い**（全メンバーが作成編集削除可、
   設計上の意図的な選択）
-- Web/Mobileの全画面UI（シフト管理・メニュー画面含む）。Users/Roles/MemberCategoriesは`orgApi`＋
-  `OrgDataContext`経由で本物のAPIから取得する（Phase 8b、31.参照。未接続時は`mockData.ts`にフォールバック）。
-  それ以外のリソース（チャット・掲示板・カレンダー本体・シフト・リンク集）は引き続きダミーデータ表示
+- Web/Mobileの全画面UI（シフト管理・メニュー画面含む）。Users/Roles/MemberCategories/OrgLinks/
+  BulletinCategories/BulletinPosts/CalendarCategories/CalendarEvents/DutyTypes/ShiftTypes/
+  MemberDailyStatus/DailyNoteは`orgApi`＋`OrgDataContext`（一部は各ページの直接fetch）経由で本物の
+  APIから取得する（Phase 8b・8c、31./32.参照。未接続時は`mockData.ts`にフォールバック）。
+  **チャット関連（ChatRooms/Messages）だけがバックエンド未接続で残っている**（Phase 8d対象）
 - 検索・フィルタ・ソート・ヘッダー連携・リアクション・コメント投稿・チャットの`@`メンションなどの
-  フロントエンドロジック（いずれもローカルstateで完結。リロードで消える＝バックエンド未接続）
+  フロントエンドロジック（いずれもローカルstateで完結。リロードで消える＝バックエンド未接続。
+  掲示板のリアクション・コメントはバックエンドにAPI自体が無くPhase 9まで対象外）
 - チャット新着メッセージのプッシュ通知判定＋SNS発行ロジック（`pushNotification.ts`、27.参照）。
   forceNotify優先・メンション限定・デフォルト全員通知の3分岐、送信者除外まで実装・テスト済み
   （実際のモバイルプッシュ配信＝SNSトピック以降のAPNs/FCM接続は未実装）
@@ -425,6 +477,9 @@ Phase 8b（3章31.、この本ファイルの更新も含む）は**全てコミ
   デプロイしておらず、本物のログイン成功/失敗の動作確認はまだできていない**
 - Users/Roles/MemberCategoriesのREST接続（Phase 8b、31.参照）。全CRUD（web）・全画面での参照（web/mobile）
   を実装済み。**コードは実装済みだが実際のAPIへの疎通確認はまだできていない**
+- OrgLinks/BulletinCategories/BulletinPosts/CalendarCategories/CalendarEvents/DutyTypes/ShiftTypes/
+  MemberDailyStatus/DailyNoteのREST接続（Phase 8c、32.参照）。**コードは実装済みだが実際のAPIへの
+  疎通確認はまだできていない**
 
 ### 未実装（TODOコメントあり、501スタブ等）
 - Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装）
@@ -432,8 +487,9 @@ Phase 8b（3章31.、この本ファイルの更新も含む）は**全てコミ
   チャット側の`pushNotification.ts`とは別ファイルで、Phase 5・6のどちらでも対応対象外だった）
 - リアクション/コメントの永続化API（掲示板コメント用のDynamoDBテーブルは未作成）
 - Amazon Chime SDK Meeting/Attendee作成（音声通話は現状デモの着信画面遷移のみ）
-- AppSyncクライアント接続（チャット機能は全体がバックエンド未接続のまま。8a完了時点でも
-  チャット周りの画面はローカルstateのまま変更していない。REST API側（users以外）の接続も8b/8c待ち）
+- AppSyncクライアント接続（チャット機能は全体がバックエンド未接続のまま。8a〜8c完了時点でも
+  チャット周りの画面はローカルstateのまま変更していない。バックエンドにもルーム一覧取得・
+  ルーム作成・リアクションのmutation/スキーマが無く、Phase 8dはinfra追加実装から始める必要がある）
 - 実際のモバイルプッシュ配信（SNSトピック以降のAPNs/FCM接続。チャット・カレンダーリマインドとも
   SNS発行までは実装済みだが、その先のデバイス配信は未接続）
 
@@ -511,14 +567,19 @@ Phase 8b（3章31.、この本ファイルの更新も含む）は**全てコミ
     `orgApi.ts`＋`OrgDataContext`を新設し、web 9画面・mobile 9画面の`mockMembers`/`mockRoles`/
     `mockMemberCategories`直接参照を解消。AdminPageのロール・メンバーカテゴリタブに追加・改名・削除UIを
     新設しAPI接続、ユーザー権限編集もPUT接続した。ただし**実デプロイ前のため実際のAPI疎通確認はできていない**
-  - **8c〜8d（残りのリソース接続）：未着手**。それ以外のCRUD（bulletin/calendar/links/shifts）は
-    REST APIクライアント（8bと同じ`authFetch`パターン）に、チャットはAppSyncクライアント
-    （sendMessage/markMessageRead/listMessagesForRoom/Subscription）に接続する
+  - **8c（残りのリソース接続：OrgLinks/掲示板/カレンダー/シフト）：コード実装完了**（詳細は3章32.参照）。
+    `orgApi.ts`・`OrgDataContext`をさらに拡張し、9リソース分のREST接続を完了。AdminPageに
+    リンク集・掲示板カテゴリー・カレンダーカテゴリー・当番種別・シフト種別の管理UIを新設。
+    ただし**実デプロイ前のため実際のAPI疎通確認はできていない**
+  - **8d（チャットのAppSync接続）：未着手**。8a〜8cと異なりバックエンドに構造的な欠落があり
+    （ルーム一覧取得クエリ・ルーム作成mutation・リアクション用mutation/スキーマフィールドが
+    いずれも未実装）、フロント接続だけでは完結しない。infra追加実装（`ChatRoomsTable`への
+    GSI追加、新規リゾルバ、スキーマ拡張）から着手する必要がある
   `infra/lib/constructs/auth-construct.ts`のCognito設定・`infra/lambda/common/cognito.ts`・
   Web/Mobileの`AuthContext.tsx`は実装済み。詳細は
   `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`の
-  「Phase 8a: 認証基盤 実装計画」、および`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`
-  （Phase 8b実装計画）を参照。
+  「Phase 8a: 認証基盤 実装計画」、`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`
+  （Phase 8b実装計画）、および本ファイル3章32.（Phase 8c、独立した計画ファイルなし）を参照。
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
   掲示板コメント用の新規DynamoDBテーブル・CRUD Lambdaを追加し、ローカルstateのみの
   `toggleReaction`等をAPI接続に置き換える。`bulletin/notifyOnPost.ts`（現状`console.log`のみの

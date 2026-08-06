@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, Pressable, FlatList, ScrollView, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   mockCalendarEvents,
-  mockCalendarCategories,
   weekdayLabelForDate,
   holidayNameForDate,
   toDateKey,
@@ -14,15 +13,15 @@ import {
   buildMonthGrid,
   buildWeekDays,
   eventsOnDate,
+  type CalendarCategory,
   type CalendarEvent,
 } from "@on-connect/shared";
 import type { CalendarStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
 
 type Props = NativeStackScreenProps<CalendarStackParamList, "CalendarList">;
-
-const categoryName = (categoryId: string | undefined) =>
-  mockCalendarCategories.find((c) => c.categoryId === categoryId)?.name;
 
 const formatRange = (startAt: string, endAt: string) => {
   const start = new Date(startAt);
@@ -53,9 +52,21 @@ const viewModeLabels: Record<ViewMode, string> = { month: "月", week: "週", li
  * TODO: GET /calendar-events から一覧を取得する（現状はダミーデータ表示）
  */
 export function CalendarScreen({ navigation }: Props) {
+  const { calendarCategories } = useOrgData();
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [refDate, setRefDate] = useState(() => toDateKey(new Date()));
   const todayKey = toDateKey(new Date());
+  const [events, setEvents] = useState<CalendarEvent[]>(mockCalendarEvents);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setEvents(await orgApi.listCalendarEvents());
+      } catch {
+        setEvents(mockCalendarEvents);
+      }
+    })();
+  }, []);
 
   const goPrev = () => setRefDate((d) => (viewMode === "week" ? addDays(d, -7) : addMonths(d, -1)));
   const goNext = () => setRefDate((d) => (viewMode === "week" ? addDays(d, 7) : addMonths(d, 1)));
@@ -104,15 +115,17 @@ export function CalendarScreen({ navigation }: Props) {
 
       {viewMode === "month" && (
         <ScrollView style={styles.flexFill}>
-          <MonthGrid year={year} month={month} events={mockCalendarEvents} todayKey={todayKey} onSelectDay={goToWeek} />
+          <MonthGrid year={year} month={month} events={events} todayKey={todayKey} onSelectDay={goToWeek} />
         </ScrollView>
       )}
       {viewMode === "week" && (
         <ScrollView style={styles.flexFill}>
-          <WeekAgenda anchorKey={refDate} events={mockCalendarEvents} todayKey={todayKey} onSelectEvent={goToDetail} />
+          <WeekAgenda anchorKey={refDate} events={events} todayKey={todayKey} onSelectEvent={goToDetail} />
         </ScrollView>
       )}
-      {viewMode === "list" && <ListView events={mockCalendarEvents} onSelectEvent={goToDetail} />}
+      {viewMode === "list" && (
+        <ListView events={events} calendarCategories={calendarCategories} onSelectEvent={goToDetail} />
+      )}
     </View>
   );
 }
@@ -235,7 +248,17 @@ function WeekAgenda({
   );
 }
 
-function ListView({ events, onSelectEvent }: { events: CalendarEvent[]; onSelectEvent: (eventId: string) => void }) {
+function ListView({
+  events,
+  calendarCategories,
+  onSelectEvent,
+}: {
+  events: CalendarEvent[];
+  calendarCategories: CalendarCategory[];
+  onSelectEvent: (eventId: string) => void;
+}) {
+  const categoryName = (categoryId: string | undefined) =>
+    calendarCategories.find((c) => c.categoryId === categoryId)?.name;
   const now = Date.now();
   const upcoming = [...events]
     .filter((e) => new Date(e.endAt).getTime() >= now)

@@ -1,5 +1,18 @@
 import { fetchAuthSession } from "aws-amplify/auth";
-import type { MemberCategory, Role, User } from "@on-connect/shared";
+import type {
+  BulletinCategory,
+  BulletinPost,
+  CalendarCategory,
+  CalendarEvent,
+  DailyNote,
+  DutyType,
+  MemberCategory,
+  MemberDailyStatus,
+  OrgLink,
+  Role,
+  ShiftType,
+  User,
+} from "@on-connect/shared";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -62,4 +75,89 @@ export const orgApi = {
     }),
   deleteMemberCategory: (categoryId: string) =>
     authFetchJson<void>(`/member-categories/${categoryId}`, { method: "DELETE" }),
+
+  listOrgLinks: () => authFetchJson<OrgLink[]>("/org-links"),
+  createOrgLink: (input: { title: string; url: string; category?: string; sortOrder?: number }) =>
+    authFetchJson<OrgLink>("/org-links", { method: "POST", body: JSON.stringify(input) }),
+  updateOrgLink: (linkId: string, partial: Partial<OrgLink>) =>
+    authFetchJson<OrgLink>(`/org-links/${linkId}`, { method: "PUT", body: JSON.stringify(partial) }),
+  deleteOrgLink: (linkId: string) => authFetchJson<void>(`/org-links/${linkId}`, { method: "DELETE" }),
+
+  listBulletinCategories: () => authFetchJson<BulletinCategory[]>("/bulletin-categories"),
+  createBulletinCategory: (name: string) =>
+    authFetchJson<BulletinCategory>("/bulletin-categories", { method: "POST", body: JSON.stringify({ name }) }),
+  updateBulletinCategory: (categoryId: string, name: string) =>
+    authFetchJson<BulletinCategory>(`/bulletin-categories/${categoryId}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    }),
+  deleteBulletinCategory: (categoryId: string) =>
+    authFetchJson<void>(`/bulletin-categories/${categoryId}`, { method: "DELETE" }),
+
+  listBulletinPosts: () => authFetchJson<BulletinPost[]>("/bulletin-posts"),
+  getBulletinPost: (postId: string) => authFetchJson<BulletinPost>(`/bulletin-posts/${postId}`),
+  createBulletinPost: (input: {
+    title: string;
+    body: string;
+    categoryId?: string;
+    visibleCategoryIds?: string[];
+    attachmentKeys?: string[];
+  }) => authFetchJson<BulletinPost>("/bulletin-posts", { method: "POST", body: JSON.stringify(input) }),
+  updateBulletinPost: (postId: string, partial: Partial<BulletinPost>) =>
+    authFetchJson<BulletinPost>(`/bulletin-posts/${postId}`, { method: "PUT", body: JSON.stringify(partial) }),
+  deleteBulletinPost: (postId: string) => authFetchJson<void>(`/bulletin-posts/${postId}`, { method: "DELETE" }),
+
+  listCalendarCategories: () => authFetchJson<CalendarCategory[]>("/calendar-categories"),
+  createCalendarCategory: (name: string) =>
+    authFetchJson<CalendarCategory>("/calendar-categories", { method: "POST", body: JSON.stringify({ name }) }),
+  updateCalendarCategory: (categoryId: string, name: string) =>
+    authFetchJson<CalendarCategory>(`/calendar-categories/${categoryId}`, {
+      method: "PUT",
+      body: JSON.stringify({ name }),
+    }),
+  deleteCalendarCategory: (categoryId: string) =>
+    authFetchJson<void>(`/calendar-categories/${categoryId}`, { method: "DELETE" }),
+
+  listCalendarEvents: () => authFetchJson<CalendarEvent[]>("/calendar-events"),
+  getCalendarEvent: (eventId: string) => authFetchJson<CalendarEvent>(`/calendar-events/${eventId}`),
+  createCalendarEvent: (input: {
+    title: string;
+    startAt: string;
+    endAt: string;
+    description?: string;
+    categoryId?: string;
+    visibleCategoryIds?: string[];
+  }) => authFetchJson<CalendarEvent>("/calendar-events", { method: "POST", body: JSON.stringify(input) }),
+  updateCalendarEvent: (eventId: string, partial: Partial<CalendarEvent>) =>
+    authFetchJson<CalendarEvent>(`/calendar-events/${eventId}`, { method: "PUT", body: JSON.stringify(partial) }),
+  deleteCalendarEvent: (eventId: string) => authFetchJson<void>(`/calendar-events/${eventId}`, { method: "DELETE" }),
+
+  listDutyTypes: () => authFetchJson<DutyType[]>("/duty-types"),
+  createDutyType: (name: string) =>
+    authFetchJson<DutyType>("/duty-types", { method: "POST", body: JSON.stringify({ name }) }),
+  updateDutyType: (dutyTypeId: string, partial: Partial<DutyType>) =>
+    authFetchJson<DutyType>(`/duty-types/${dutyTypeId}`, { method: "PUT", body: JSON.stringify(partial) }),
+  deleteDutyType: (dutyTypeId: string) => authFetchJson<void>(`/duty-types/${dutyTypeId}`, { method: "DELETE" }),
+
+  listShiftTypes: () => authFetchJson<ShiftType[]>("/shift-types"),
+  createShiftType: (name: string) =>
+    authFetchJson<ShiftType>("/shift-types", { method: "POST", body: JSON.stringify({ name }) }),
+  updateShiftType: (shiftTypeId: string, partial: Partial<ShiftType>) =>
+    authFetchJson<ShiftType>(`/shift-types/${shiftTypeId}`, { method: "PUT", body: JSON.stringify(partial) }),
+  deleteShiftType: (shiftTypeId: string) => authFetchJson<void>(`/shift-types/${shiftTypeId}`, { method: "DELETE" }),
+
+  listMemberDailyStatusesForDate: (date: string) =>
+    authFetchJson<MemberDailyStatus[]>(`/member-daily-status?date=${date}`),
+  updateMemberDailyStatus: (date: string, userId: string, partial: Partial<MemberDailyStatus>) =>
+    authFetchJson<MemberDailyStatus>(`/member-daily-status/${date}/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(partial),
+    }),
+  deleteMemberDailyStatus: (date: string, userId: string) =>
+    authFetchJson<void>(`/member-daily-status/${date}/${userId}`, { method: "DELETE" }),
+
+  getDailyNote: (date: string) => authFetchJson<DailyNote>(`/daily-notes/${date}`),
+  updateDailyNote: (date: string, note: string) =>
+    authFetchJson<DailyNote>(`/daily-notes/${date}`, { method: "PUT", body: JSON.stringify({ note }) }),
+  deleteDailyNote: (date: string) => authFetchJson<void>(`/daily-notes/${date}`, { method: "DELETE" }),
 };

@@ -1,9 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   mockCalendarEvents,
-  mockCalendarCategories,
   weekdayLabelForDate,
   holidayNameForDate,
   toDateKey,
@@ -13,12 +12,12 @@ import {
   buildMonthGrid,
   buildWeekDays,
   eventsOnDate,
+  type CalendarCategory,
   type CalendarEvent,
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
-
-const categoryName = (categoryId: string | undefined) =>
-  mockCalendarCategories.find((c) => c.categoryId === categoryId)?.name;
+import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
 
 const formatRange = (startAt: string, endAt: string) => {
   const start = new Date(startAt);
@@ -49,9 +48,21 @@ const viewModeLabels: Record<ViewMode, string> = { month: "月", week: "週", li
  * TODO: GET /calendar-events から一覧を取得する（現状はダミーデータ表示）
  */
 export function CalendarPage() {
+  const { calendarCategories } = useOrgData();
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [refDate, setRefDate] = useState(() => toDateKey(new Date()));
   const todayKey = toDateKey(new Date());
+  const [events, setEvents] = useState<CalendarEvent[]>(mockCalendarEvents);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setEvents(await orgApi.listCalendarEvents());
+      } catch {
+        setEvents(mockCalendarEvents);
+      }
+    })();
+  }, []);
 
   const goPrev = () => setRefDate((d) => (viewMode === "week" ? addDays(d, -7) : addMonths(d, -1)));
   const goNext = () => setRefDate((d) => (viewMode === "week" ? addDays(d, 7) : addMonths(d, 1)));
@@ -105,10 +116,10 @@ export function CalendarPage() {
       </div>
 
       {viewMode === "month" && (
-        <MonthGrid year={year} month={month} events={mockCalendarEvents} todayKey={todayKey} onSelectDay={goToWeek} />
+        <MonthGrid year={year} month={month} events={events} todayKey={todayKey} onSelectDay={goToWeek} />
       )}
-      {viewMode === "week" && <WeekGrid anchorKey={refDate} events={mockCalendarEvents} todayKey={todayKey} />}
-      {viewMode === "list" && <ListView events={mockCalendarEvents} />}
+      {viewMode === "week" && <WeekGrid anchorKey={refDate} events={events} todayKey={todayKey} />}
+      {viewMode === "list" && <ListView events={events} calendarCategories={calendarCategories} />}
     </div>
   );
 }
@@ -254,7 +265,15 @@ function WeekGrid({ anchorKey, events, todayKey }: { anchorKey: string; events: 
   );
 }
 
-function ListView({ events }: { events: CalendarEvent[] }) {
+function ListView({
+  events,
+  calendarCategories,
+}: {
+  events: CalendarEvent[];
+  calendarCategories: CalendarCategory[];
+}) {
+  const categoryName = (categoryId: string | undefined) =>
+    calendarCategories.find((c) => c.categoryId === categoryId)?.name;
   const now = Date.now();
   const upcoming = [...events]
     .filter((e) => new Date(e.endAt).getTime() >= now)

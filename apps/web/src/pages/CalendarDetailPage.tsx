@@ -1,13 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Pencil, Trash2, CalendarPlus } from "lucide-react";
-import { mockCalendarEvents, mockCalendarCategories, buildIcsForEvent } from "@on-connect/shared";
+import { mockCalendarEvents, type CalendarEvent, buildIcsForEvent } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
-
-const categoryName = (categoryId: string | undefined) =>
-  mockCalendarCategories.find((c) => c.categoryId === categoryId)?.name;
+import { orgApi } from "../api/orgApi";
 
 const formatRange = (startAt: string, endAt: string) => {
   const start = new Date(startAt);
@@ -24,11 +22,32 @@ const formatRange = (startAt: string, endAt: string) => {
  */
 export function CalendarDetailPage() {
   const { currentUserId } = useAuth();
-  const { members } = useOrgData();
+  const { members, calendarCategories } = useOrgData();
   const { eventId = "" } = useParams();
   const navigate = useNavigate();
-  const [event] = useState(() => mockCalendarEvents.find((e) => e.eventId === eventId));
+  const [event, setEvent] = useState<CalendarEvent | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
+  const [deleteError, setDeleteError] = useState("");
   const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
+  const categoryName = (categoryId: string | undefined) =>
+    calendarCategories.find((c) => c.categoryId === categoryId)?.name;
+
+  useEffect(() => {
+    (async () => {
+      setIsLoading(true);
+      try {
+        setEvent(await orgApi.getCalendarEvent(eventId));
+      } catch {
+        setEvent(mockCalendarEvents.find((e) => e.eventId === eventId));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [eventId]);
+
+  if (isLoading) {
+    return null;
+  }
 
   if (!event) {
     return <p>予定が見つかりません。</p>;
@@ -36,13 +55,18 @@ export function CalendarDetailPage() {
 
   const isOwnEvent = event.authorId === currentUserId;
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     const message = isOwnEvent
       ? "この予定を削除しますか？"
       : `この予定は${memberName(event.authorId)}さんが作成したものです。本当に削除しますか？`;
     if (!window.confirm(message)) return;
-    // TODO: DELETE /calendar-events/{eventId} を呼び出す
-    navigate("/calendar");
+    setDeleteError("");
+    try {
+      await orgApi.deleteCalendarEvent(eventId);
+      navigate("/calendar");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "予定の削除に失敗しました");
+    }
   };
 
   const handleAddToCalendar = () => {
@@ -68,6 +92,7 @@ export function CalendarDetailPage() {
           </button>
         </div>
       </div>
+      {deleteError && <p style={{ color: colors.danger, fontSize: 13 }}>{deleteError}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textMuted, margin: "8px 0" }}>
         <span>{formatRange(event.startAt, event.endAt)}</span>
         {categoryName(event.categoryId) && <span>・{categoryName(event.categoryId)}</span>}

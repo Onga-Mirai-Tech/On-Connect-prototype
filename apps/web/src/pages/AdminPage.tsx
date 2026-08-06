@@ -10,14 +10,23 @@ import {
   KeyRound,
   Pencil,
   Trash2,
+  ListChecks,
+  Clock,
 } from "lucide-react";
-import type { RolePermissions } from "@on-connect/shared";
-import { mockBulletinCategories, mockCalendarCategories, mockOrgLinks } from "@on-connect/shared";
+import type { OrgLink, RolePermissions } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { orgApi, type AdminUser } from "../api/orgApi";
 import { useOrgData } from "../context/OrgDataContext";
 
-type AdminTab = "users" | "roles" | "memberCategories" | "bulletinCategories" | "links" | "calendarCategories";
+type AdminTab =
+  | "users"
+  | "roles"
+  | "memberCategories"
+  | "bulletinCategories"
+  | "links"
+  | "calendarCategories"
+  | "dutyTypes"
+  | "shiftTypes";
 
 /** 権限は今後ここにロールではなくメンバー単位で持たせる（設計変更により`Role`からは`permissions`が無くなった） */
 const permissionLabels: Record<keyof RolePermissions, string> = {
@@ -55,7 +64,24 @@ function suggestNextLoginId(members: AdminUser[]): string {
  */
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("users");
-  const { members, roles, memberCategories, refetchMembers, refetchRoles, refetchMemberCategories } = useOrgData();
+  const {
+    members,
+    roles,
+    memberCategories,
+    orgLinks,
+    bulletinCategories,
+    calendarCategories,
+    dutyTypes,
+    shiftTypes,
+    refetchMembers,
+    refetchRoles,
+    refetchMemberCategories,
+    refetchOrgLinks,
+    refetchBulletinCategories,
+    refetchCalendarCategories,
+    refetchDutyTypes,
+    refetchShiftTypes,
+  } = useOrgData();
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [permissionPendingUserId, setPermissionPendingUserId] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState("");
@@ -226,6 +252,268 @@ export function AdminPage() {
     }
   };
 
+  // リンク集管理
+  type LinkFormValue = { title: string; url: string; category: string; sortOrder: string };
+  const emptyLinkForm: LinkFormValue = { title: "", url: "", category: "", sortOrder: "0" };
+  const [showAddLinkForm, setShowAddLinkForm] = useState(false);
+  const [newLink, setNewLink] = useState<LinkFormValue>(emptyLinkForm);
+  const [linkSubmitting, setLinkSubmitting] = useState(false);
+  const [linkError, setLinkError] = useState("");
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [editingLink, setEditingLink] = useState<LinkFormValue>(emptyLinkForm);
+
+  const handleAddLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLinkError("");
+    setLinkSubmitting(true);
+    try {
+      await orgApi.createOrgLink({
+        title: newLink.title,
+        url: newLink.url,
+        category: newLink.category || undefined,
+        sortOrder: Number(newLink.sortOrder) || 0,
+      });
+      await refetchOrgLinks();
+      setNewLink(emptyLinkForm);
+      setShowAddLinkForm(false);
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : "リンクの追加に失敗しました");
+    } finally {
+      setLinkSubmitting(false);
+    }
+  };
+
+  const handleSaveLink = async (linkId: string) => {
+    setLinkError("");
+    try {
+      await orgApi.updateOrgLink(linkId, {
+        title: editingLink.title,
+        url: editingLink.url,
+        category: editingLink.category || undefined,
+        sortOrder: Number(editingLink.sortOrder) || 0,
+      });
+      await refetchOrgLinks();
+      setEditingLinkId(null);
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : "リンクの更新に失敗しました");
+    }
+  };
+
+  const handleDeleteLink = async (linkId: string) => {
+    setLinkError("");
+    try {
+      await orgApi.deleteOrgLink(linkId);
+      await refetchOrgLinks();
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : "リンクの削除に失敗しました");
+    }
+  };
+
+  const startEditLink = (l: OrgLink) => {
+    setEditingLinkId(l.linkId);
+    setEditingLink({ title: l.title, url: l.url, category: l.category ?? "", sortOrder: String(l.sortOrder) });
+  };
+
+  // 掲示板カテゴリ管理
+  const [newBulletinCategoryName, setNewBulletinCategoryName] = useState("");
+  const [bulletinCategorySubmitting, setBulletinCategorySubmitting] = useState(false);
+  const [bulletinCategoryError, setBulletinCategoryError] = useState("");
+  const [editingBulletinCategoryId, setEditingBulletinCategoryId] = useState<string | null>(null);
+  const [editingBulletinCategoryName, setEditingBulletinCategoryName] = useState("");
+
+  const handleAddBulletinCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBulletinCategoryName.trim()) return;
+    setBulletinCategoryError("");
+    setBulletinCategorySubmitting(true);
+    try {
+      await orgApi.createBulletinCategory(newBulletinCategoryName.trim());
+      await refetchBulletinCategories();
+      setNewBulletinCategoryName("");
+    } catch (err) {
+      setBulletinCategoryError(err instanceof Error ? err.message : "掲示板カテゴリーの追加に失敗しました");
+    } finally {
+      setBulletinCategorySubmitting(false);
+    }
+  };
+
+  const handleSaveBulletinCategoryName = async (categoryId: string) => {
+    if (!editingBulletinCategoryName.trim()) return;
+    setBulletinCategoryError("");
+    try {
+      await orgApi.updateBulletinCategory(categoryId, editingBulletinCategoryName.trim());
+      await refetchBulletinCategories();
+      setEditingBulletinCategoryId(null);
+    } catch (err) {
+      setBulletinCategoryError(err instanceof Error ? err.message : "掲示板カテゴリーの更新に失敗しました");
+    }
+  };
+
+  const handleDeleteBulletinCategory = async (categoryId: string) => {
+    setBulletinCategoryError("");
+    try {
+      await orgApi.deleteBulletinCategory(categoryId);
+      await refetchBulletinCategories();
+    } catch (err) {
+      setBulletinCategoryError(err instanceof Error ? err.message : "掲示板カテゴリーの削除に失敗しました");
+    }
+  };
+
+  // カレンダーカテゴリ管理
+  const [newCalendarCategoryName, setNewCalendarCategoryName] = useState("");
+  const [calendarCategorySubmitting, setCalendarCategorySubmitting] = useState(false);
+  const [calendarCategoryError, setCalendarCategoryError] = useState("");
+  const [editingCalendarCategoryId, setEditingCalendarCategoryId] = useState<string | null>(null);
+  const [editingCalendarCategoryName, setEditingCalendarCategoryName] = useState("");
+
+  const handleAddCalendarCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCalendarCategoryName.trim()) return;
+    setCalendarCategoryError("");
+    setCalendarCategorySubmitting(true);
+    try {
+      await orgApi.createCalendarCategory(newCalendarCategoryName.trim());
+      await refetchCalendarCategories();
+      setNewCalendarCategoryName("");
+    } catch (err) {
+      setCalendarCategoryError(err instanceof Error ? err.message : "カレンダーカテゴリーの追加に失敗しました");
+    } finally {
+      setCalendarCategorySubmitting(false);
+    }
+  };
+
+  const handleSaveCalendarCategoryName = async (categoryId: string) => {
+    if (!editingCalendarCategoryName.trim()) return;
+    setCalendarCategoryError("");
+    try {
+      await orgApi.updateCalendarCategory(categoryId, editingCalendarCategoryName.trim());
+      await refetchCalendarCategories();
+      setEditingCalendarCategoryId(null);
+    } catch (err) {
+      setCalendarCategoryError(err instanceof Error ? err.message : "カレンダーカテゴリーの更新に失敗しました");
+    }
+  };
+
+  const handleDeleteCalendarCategory = async (categoryId: string) => {
+    setCalendarCategoryError("");
+    try {
+      await orgApi.deleteCalendarCategory(categoryId);
+      await refetchCalendarCategories();
+    } catch (err) {
+      setCalendarCategoryError(err instanceof Error ? err.message : "カレンダーカテゴリーの削除に失敗しました");
+    }
+  };
+
+  // 当番種別管理
+  const [newDutyTypeName, setNewDutyTypeName] = useState("");
+  const [dutyTypeSubmitting, setDutyTypeSubmitting] = useState(false);
+  const [dutyTypeError, setDutyTypeError] = useState("");
+  const [editingDutyTypeId, setEditingDutyTypeId] = useState<string | null>(null);
+  const [editingDutyTypeName, setEditingDutyTypeName] = useState("");
+
+  const handleAddDutyType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDutyTypeName.trim()) return;
+    setDutyTypeError("");
+    setDutyTypeSubmitting(true);
+    try {
+      await orgApi.createDutyType(newDutyTypeName.trim());
+      await refetchDutyTypes();
+      setNewDutyTypeName("");
+    } catch (err) {
+      setDutyTypeError(err instanceof Error ? err.message : "当番種別の追加に失敗しました");
+    } finally {
+      setDutyTypeSubmitting(false);
+    }
+  };
+
+  const handleSaveDutyTypeName = async (dutyTypeId: string) => {
+    if (!editingDutyTypeName.trim()) return;
+    setDutyTypeError("");
+    try {
+      await orgApi.updateDutyType(dutyTypeId, { name: editingDutyTypeName.trim() });
+      await refetchDutyTypes();
+      setEditingDutyTypeId(null);
+    } catch (err) {
+      setDutyTypeError(err instanceof Error ? err.message : "当番種別の更新に失敗しました");
+    }
+  };
+
+  const handleToggleDutyTypeActive = async (dutyTypeId: string, isActive: boolean) => {
+    setDutyTypeError("");
+    try {
+      await orgApi.updateDutyType(dutyTypeId, { isActive: !isActive });
+      await refetchDutyTypes();
+    } catch (err) {
+      setDutyTypeError(err instanceof Error ? err.message : "当番種別の更新に失敗しました");
+    }
+  };
+
+  const handleDeleteDutyType = async (dutyTypeId: string) => {
+    setDutyTypeError("");
+    try {
+      await orgApi.deleteDutyType(dutyTypeId);
+      await refetchDutyTypes();
+    } catch (err) {
+      setDutyTypeError(err instanceof Error ? err.message : "当番種別の削除に失敗しました");
+    }
+  };
+
+  // シフト種別管理
+  const [newShiftTypeName, setNewShiftTypeName] = useState("");
+  const [shiftTypeSubmitting, setShiftTypeSubmitting] = useState(false);
+  const [shiftTypeError, setShiftTypeError] = useState("");
+  const [editingShiftTypeId, setEditingShiftTypeId] = useState<string | null>(null);
+  const [editingShiftTypeName, setEditingShiftTypeName] = useState("");
+
+  const handleAddShiftType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newShiftTypeName.trim()) return;
+    setShiftTypeError("");
+    setShiftTypeSubmitting(true);
+    try {
+      await orgApi.createShiftType(newShiftTypeName.trim());
+      await refetchShiftTypes();
+      setNewShiftTypeName("");
+    } catch (err) {
+      setShiftTypeError(err instanceof Error ? err.message : "シフト種別の追加に失敗しました");
+    } finally {
+      setShiftTypeSubmitting(false);
+    }
+  };
+
+  const handleSaveShiftTypeName = async (shiftTypeId: string) => {
+    if (!editingShiftTypeName.trim()) return;
+    setShiftTypeError("");
+    try {
+      await orgApi.updateShiftType(shiftTypeId, { name: editingShiftTypeName.trim() });
+      await refetchShiftTypes();
+      setEditingShiftTypeId(null);
+    } catch (err) {
+      setShiftTypeError(err instanceof Error ? err.message : "シフト種別の更新に失敗しました");
+    }
+  };
+
+  const handleToggleShiftTypeActive = async (shiftTypeId: string, isActive: boolean) => {
+    setShiftTypeError("");
+    try {
+      await orgApi.updateShiftType(shiftTypeId, { isActive: !isActive });
+      await refetchShiftTypes();
+    } catch (err) {
+      setShiftTypeError(err instanceof Error ? err.message : "シフト種別の更新に失敗しました");
+    }
+  };
+
+  const handleDeleteShiftType = async (shiftTypeId: string) => {
+    setShiftTypeError("");
+    try {
+      await orgApi.deleteShiftType(shiftTypeId);
+      await refetchShiftTypes();
+    } catch (err) {
+      setShiftTypeError(err instanceof Error ? err.message : "シフト種別の削除に失敗しました");
+    }
+  };
+
   const tabs: { key: AdminTab; label: string; icon: typeof Users }[] = [
     { key: "users", label: "ユーザー管理", icon: Users },
     { key: "roles", label: "ロール・権限管理", icon: ShieldCheck },
@@ -233,6 +521,8 @@ export function AdminPage() {
     { key: "bulletinCategories", label: "掲示板カテゴリー管理", icon: ClipboardList },
     { key: "links", label: "リンク集管理", icon: Link2 },
     { key: "calendarCategories", label: "カレンダーカテゴリー管理", icon: CalendarCog },
+    { key: "dutyTypes", label: "当番種別管理", icon: ListChecks },
+    { key: "shiftTypes", label: "シフト種別管理", icon: Clock },
   ];
 
   return (
@@ -599,34 +889,418 @@ export function AdminPage() {
       {tab === "bulletinCategories" && (
         <section>
           <h3>掲示板カテゴリー管理</h3>
-          {/* TODO: 追加・編集・削除をAPIに接続する（現状はダミーデータ表示） */}
-          <ul>
-            {mockBulletinCategories.map((c) => (
-              <li key={c.categoryId}>{c.name}</li>
+          <form onSubmit={handleAddBulletinCategory} style={{ display: "flex", gap: 8, maxWidth: 360, marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="カテゴリ名（例：緊急連絡）"
+              value={newBulletinCategoryName}
+              onChange={(e) => setNewBulletinCategoryName(e.target.value)}
+              style={{ flex: 1 }}
+              required
+            />
+            <button type="submit" disabled={bulletinCategorySubmitting}>
+              追加
+            </button>
+          </form>
+          {bulletinCategoryError && <p style={{ color: colors.danger, fontSize: 13 }}>{bulletinCategoryError}</p>}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 360 }}>
+            {bulletinCategories.map((c) => (
+              <li
+                key={c.categoryId}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${colors.surface}` }}
+              >
+                {editingBulletinCategoryId === c.categoryId ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingBulletinCategoryName}
+                      onChange={(e) => setEditingBulletinCategoryName(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => handleSaveBulletinCategoryName(c.categoryId)}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => setEditingBulletinCategoryId(null)}>
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1 }}>{c.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBulletinCategoryId(c.categoryId);
+                        setEditingBulletinCategoryName(c.name);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Pencil size={14} /> 改名
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteBulletinCategory(c.categoryId)}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Trash2 size={14} /> 削除
+                    </button>
+                  </>
+                )}
+              </li>
             ))}
           </ul>
         </section>
       )}
       {tab === "links" && (
         <section>
-          <h3>リンク集管理</h3>
-          {/* TODO: OrgLinksのCRUDをAPIに接続する（現状はダミーデータ表示） */}
-          <ul>
-            {mockOrgLinks.map((l) => (
-              <li key={l.linkId}>
-                {l.title}（{l.category}）
-              </li>
-            ))}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3>リンク集管理</h3>
+            <button
+              type="button"
+              onClick={() => {
+                setNewLink(emptyLinkForm);
+                setLinkError("");
+                setShowAddLinkForm(true);
+              }}
+            >
+              リンクを追加
+            </button>
+          </div>
+          {showAddLinkForm && (
+            <form
+              onSubmit={handleAddLink}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                maxWidth: 360,
+                border: `1px solid ${colors.surface}`,
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 12,
+              }}
+            >
+              <input
+                type="text"
+                placeholder="タイトル"
+                value={newLink.title}
+                onChange={(e) => setNewLink((s) => ({ ...s, title: e.target.value }))}
+                required
+              />
+              <input
+                type="url"
+                placeholder="URL"
+                value={newLink.url}
+                onChange={(e) => setNewLink((s) => ({ ...s, url: e.target.value }))}
+                required
+              />
+              <input
+                type="text"
+                placeholder="カテゴリ（任意）"
+                value={newLink.category}
+                onChange={(e) => setNewLink((s) => ({ ...s, category: e.target.value }))}
+              />
+              <label style={{ fontSize: 12, color: colors.textMuted }}>
+                並び順
+                <input
+                  type="number"
+                  value={newLink.sortOrder}
+                  onChange={(e) => setNewLink((s) => ({ ...s, sortOrder: e.target.value }))}
+                  style={{ display: "block", width: "100%", marginTop: 4 }}
+                />
+              </label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="submit" disabled={linkSubmitting}>
+                  作成する
+                </button>
+                <button type="button" onClick={() => setShowAddLinkForm(false)}>
+                  キャンセル
+                </button>
+              </div>
+            </form>
+          )}
+          {linkError && <p style={{ color: colors.danger, fontSize: 13 }}>{linkError}</p>}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 420 }}>
+            {[...orgLinks]
+              .sort((a, b) => a.sortOrder - b.sortOrder)
+              .map((l) => (
+                <li
+                  key={l.linkId}
+                  style={{ padding: "6px 0", borderBottom: `1px solid ${colors.surface}` }}
+                >
+                  {editingLinkId === l.linkId ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <input
+                        type="text"
+                        placeholder="タイトル"
+                        value={editingLink.title}
+                        onChange={(e) => setEditingLink((s) => ({ ...s, title: e.target.value }))}
+                      />
+                      <input
+                        type="url"
+                        placeholder="URL"
+                        value={editingLink.url}
+                        onChange={(e) => setEditingLink((s) => ({ ...s, url: e.target.value }))}
+                      />
+                      <input
+                        type="text"
+                        placeholder="カテゴリ（任意）"
+                        value={editingLink.category}
+                        onChange={(e) => setEditingLink((s) => ({ ...s, category: e.target.value }))}
+                      />
+                      <input
+                        type="number"
+                        value={editingLink.sortOrder}
+                        onChange={(e) => setEditingLink((s) => ({ ...s, sortOrder: e.target.value }))}
+                      />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button type="button" onClick={() => handleSaveLink(l.linkId)}>
+                          保存
+                        </button>
+                        <button type="button" onClick={() => setEditingLinkId(null)}>
+                          キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ flex: 1 }}>
+                        {l.title}（{l.category ?? "その他"}）
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startEditLink(l)}
+                        style={{ display: "flex", alignItems: "center", gap: 4 }}
+                      >
+                        <Pencil size={14} /> 編集
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteLink(l.linkId)}
+                        style={{ display: "flex", alignItems: "center", gap: 4 }}
+                      >
+                        <Trash2 size={14} /> 削除
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
           </ul>
         </section>
       )}
       {tab === "calendarCategories" && (
         <section>
           <h3>カレンダーカテゴリー管理</h3>
-          {/* TODO: 追加・編集・削除をAPIに接続する（現状はダミーデータ表示） */}
-          <ul>
-            {mockCalendarCategories.map((c) => (
-              <li key={c.categoryId}>{c.name}</li>
+          <form onSubmit={handleAddCalendarCategory} style={{ display: "flex", gap: 8, maxWidth: 360, marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="カテゴリ名（例：行事）"
+              value={newCalendarCategoryName}
+              onChange={(e) => setNewCalendarCategoryName(e.target.value)}
+              style={{ flex: 1 }}
+              required
+            />
+            <button type="submit" disabled={calendarCategorySubmitting}>
+              追加
+            </button>
+          </form>
+          {calendarCategoryError && <p style={{ color: colors.danger, fontSize: 13 }}>{calendarCategoryError}</p>}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 360 }}>
+            {calendarCategories.map((c) => (
+              <li
+                key={c.categoryId}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${colors.surface}` }}
+              >
+                {editingCalendarCategoryId === c.categoryId ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingCalendarCategoryName}
+                      onChange={(e) => setEditingCalendarCategoryName(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => handleSaveCalendarCategoryName(c.categoryId)}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => setEditingCalendarCategoryId(null)}>
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1 }}>{c.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCalendarCategoryId(c.categoryId);
+                        setEditingCalendarCategoryName(c.name);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Pencil size={14} /> 改名
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCalendarCategory(c.categoryId)}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Trash2 size={14} /> 削除
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {tab === "dutyTypes" && (
+        <section>
+          <h3>当番種別管理</h3>
+          <p style={{ fontSize: 13, color: colors.textMuted }}>
+            無効化すると新規入力の選択肢から外れます（既存データはそのまま残ります）。
+          </p>
+          <form onSubmit={handleAddDutyType} style={{ display: "flex", gap: 8, maxWidth: 360, marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="当番名（例：早出）"
+              value={newDutyTypeName}
+              onChange={(e) => setNewDutyTypeName(e.target.value)}
+              style={{ flex: 1 }}
+              required
+            />
+            <button type="submit" disabled={dutyTypeSubmitting}>
+              追加
+            </button>
+          </form>
+          {dutyTypeError && <p style={{ color: colors.danger, fontSize: 13 }}>{dutyTypeError}</p>}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 420 }}>
+            {dutyTypes.map((d) => (
+              <li
+                key={d.dutyTypeId}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${colors.surface}` }}
+              >
+                {editingDutyTypeId === d.dutyTypeId ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingDutyTypeName}
+                      onChange={(e) => setEditingDutyTypeName(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => handleSaveDutyTypeName(d.dutyTypeId)}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => setEditingDutyTypeId(null)}>
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+                      <input
+                        type="checkbox"
+                        checked={d.isActive}
+                        onChange={() => handleToggleDutyTypeActive(d.dutyTypeId, d.isActive)}
+                      />
+                      {d.name}
+                      {!d.isActive && <span style={{ color: colors.textMuted, fontSize: 12 }}>（無効）</span>}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingDutyTypeId(d.dutyTypeId);
+                        setEditingDutyTypeName(d.name);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Pencil size={14} /> 改名
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteDutyType(d.dutyTypeId)}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Trash2 size={14} /> 削除
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {tab === "shiftTypes" && (
+        <section>
+          <h3>シフト種別管理</h3>
+          <p style={{ fontSize: 13, color: colors.textMuted }}>
+            無効化すると新規入力の選択肢から外れます（既存データはそのまま残ります）。
+          </p>
+          <form onSubmit={handleAddShiftType} style={{ display: "flex", gap: 8, maxWidth: 360, marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="シフト名（例：早番）"
+              value={newShiftTypeName}
+              onChange={(e) => setNewShiftTypeName(e.target.value)}
+              style={{ flex: 1 }}
+              required
+            />
+            <button type="submit" disabled={shiftTypeSubmitting}>
+              追加
+            </button>
+          </form>
+          {shiftTypeError && <p style={{ color: colors.danger, fontSize: 13 }}>{shiftTypeError}</p>}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 420 }}>
+            {shiftTypes.map((s) => (
+              <li
+                key={s.shiftTypeId}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${colors.surface}` }}
+              >
+                {editingShiftTypeId === s.shiftTypeId ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingShiftTypeName}
+                      onChange={(e) => setEditingShiftTypeName(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => handleSaveShiftTypeName(s.shiftTypeId)}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => setEditingShiftTypeId(null)}>
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
+                      <input
+                        type="checkbox"
+                        checked={s.isActive}
+                        onChange={() => handleToggleShiftTypeActive(s.shiftTypeId, s.isActive)}
+                      />
+                      {s.name}
+                      {!s.isActive && <span style={{ color: colors.textMuted, fontSize: 12 }}>（無効）</span>}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingShiftTypeId(s.shiftTypeId);
+                        setEditingShiftTypeName(s.name);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Pencil size={14} /> 改名
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteShiftType(s.shiftTypeId)}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Trash2 size={14} /> 削除
+                    </button>
+                  </>
+                )}
+              </li>
             ))}
           </ul>
         </section>

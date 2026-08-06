@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, Platform, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
@@ -6,7 +6,6 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import {
   mockBulletinPosts,
   mockBulletinComments,
-  mockBulletinCategories,
   toggleReaction,
   type BulletinPost,
   type BulletinComment,
@@ -16,28 +15,45 @@ import { ReactionBar } from "../components/ReactionBar";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
 
 type Props = NativeStackScreenProps<BulletinStackParamList, "BulletinDetail">;
 
-const categoryName = (categoryId: string | undefined) =>
-  mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
-
 /**
  * 掲示板詳細画面：タイトル・本文（HTML表示）・リアクション・コメントを表示する。
- * TODO: GET /bulletin-posts/{postId} 、コメントAPIに接続する（現状はダミーデータ表示）
+ * Phase 8c：投稿本体をAPIに接続。コメント・リアクションは対象外（バックエンドAPI自体が未実装、Phase 9で対応）
  */
 export function BulletinDetailScreen({ route, navigation }: Props) {
   const { currentUserId } = useAuth();
-  const { members } = useOrgData();
+  const { members, bulletinCategories } = useOrgData();
   const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
+  const categoryName = (categoryId: string | undefined) =>
+    bulletinCategories.find((c) => c.categoryId === categoryId)?.name;
   const { postId } = route.params;
-  const initialPost = mockBulletinPosts.find((p) => p.postId === postId);
 
-  const [post, setPost] = useState<BulletinPost | undefined>(initialPost);
+  const [post, setPost] = useState<BulletinPost | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
   const [comments, setComments] = useState<BulletinComment[]>(
     mockBulletinComments.filter((c) => c.postId === postId),
   );
   const [commentBody, setCommentBody] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      setIsLoading(true);
+      try {
+        setPost(await orgApi.getBulletinPost(postId));
+      } catch {
+        setPost(mockBulletinPosts.find((p) => p.postId === postId));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [postId]);
+
+  if (isLoading) {
+    return <View style={styles.container} />;
+  }
 
   if (!post) {
     return (

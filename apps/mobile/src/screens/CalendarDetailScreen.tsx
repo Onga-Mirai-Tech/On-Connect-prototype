@@ -1,19 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, Pressable, Alert, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockCalendarEvents, mockCalendarCategories, buildIcsForEvent } from "@on-connect/shared";
+import { mockCalendarEvents, type CalendarEvent, buildIcsForEvent } from "@on-connect/shared";
 import type { CalendarStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
 
 type Props = NativeStackScreenProps<CalendarStackParamList, "CalendarDetail">;
-
-const categoryName = (categoryId: string | undefined) =>
-  mockCalendarCategories.find((c) => c.categoryId === categoryId)?.name;
 
 const formatRange = (startAt: string, endAt: string) => {
   const start = new Date(startAt);
@@ -30,10 +28,30 @@ const formatRange = (startAt: string, endAt: string) => {
  */
 export function CalendarDetailScreen({ route, navigation }: Props) {
   const { currentUserId } = useAuth();
-  const { members } = useOrgData();
+  const { members, calendarCategories } = useOrgData();
   const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
+  const categoryName = (categoryId: string | undefined) =>
+    calendarCategories.find((c) => c.categoryId === categoryId)?.name;
   const { eventId } = route.params;
-  const [event] = useState(() => mockCalendarEvents.find((e) => e.eventId === eventId));
+  const [event, setEvent] = useState<CalendarEvent | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setIsLoading(true);
+      try {
+        setEvent(await orgApi.getCalendarEvent(eventId));
+      } catch {
+        setEvent(mockCalendarEvents.find((e) => e.eventId === eventId));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [eventId]);
+
+  if (isLoading) {
+    return <View style={styles.container} />;
+  }
 
   if (!event) {
     return (
@@ -56,9 +74,13 @@ export function CalendarDetailScreen({ route, navigation }: Props) {
         {
           text: "削除する",
           style: "destructive",
-          onPress: () => {
-            // TODO: DELETE /calendar-events/{eventId} を呼び出す
-            navigation.navigate("CalendarList");
+          onPress: async () => {
+            try {
+              await orgApi.deleteCalendarEvent(eventId);
+              navigation.navigate("CalendarList");
+            } catch (err) {
+              Alert.alert("エラー", err instanceof Error ? err.message : "予定の削除に失敗しました");
+            }
           },
         },
       ],

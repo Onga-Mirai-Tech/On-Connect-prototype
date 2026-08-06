@@ -1,27 +1,74 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { mockBulletinPosts, mockBulletinCategories } from "@on-connect/shared";
+import { mockBulletinPosts } from "@on-connect/shared";
 import { HtmlEditor } from "../components/HtmlEditor";
 import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
+import { colors } from "../theme/colors";
 
 /**
  * 掲示板投稿・編集画面（7章 7番）
  * 「タイトル」「本文（HTML編集対応）」「添付ファイル」の構成、閲覧対象のメンバーカテゴリを選択（5.3.3）
- * TODO: 保存処理をAPIに接続する（現状はダミーデータの表示のみ、保存は一覧に戻るだけ）
+ * Phase 8c：投稿本体をAPIに接続（コメント・リアクションはPhase 9のまま対象外）
  */
 export function BulletinEditPage() {
   const { postId } = useParams();
   const navigate = useNavigate();
-  const { memberCategories } = useOrgData();
-  const existingPost = postId ? mockBulletinPosts.find((p) => p.postId === postId) : undefined;
+  const { memberCategories, bulletinCategories } = useOrgData();
 
-  const [title, setTitle] = useState(existingPost?.title ?? "");
-  const [body, setBody] = useState(existingPost?.body ?? "");
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [visibleCategoryIds, setVisibleCategoryIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSave = () => {
-    // TODO: POST/PUT /bulletin-posts を呼び出して保存する
-    console.log("save bulletin post", { title, body });
-    navigate(postId ? `/bulletin/${postId}` : "/bulletin");
+  useEffect(() => {
+    if (!postId) {
+      setCategoryId(bulletinCategories[0]?.categoryId ?? "");
+      return;
+    }
+    (async () => {
+      try {
+        const post = await orgApi.getBulletinPost(postId);
+        setTitle(post.title);
+        setBody(post.body);
+        setCategoryId(post.categoryId ?? bulletinCategories[0]?.categoryId ?? "");
+        setVisibleCategoryIds(post.visibleCategoryIds);
+      } catch {
+        const post = mockBulletinPosts.find((p) => p.postId === postId);
+        setTitle(post?.title ?? "");
+        setBody(post?.body ?? "");
+        setCategoryId(post?.categoryId ?? bulletinCategories[0]?.categoryId ?? "");
+        setVisibleCategoryIds(post?.visibleCategoryIds ?? []);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    })();
+  }, [postId]);
+
+  const toggleVisibleCategory = (categoryId: string) => {
+    setVisibleCategoryIds((prev) =>
+      prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId],
+    );
+  };
+
+  const handleSave = async () => {
+    setError("");
+    setSaving(true);
+    try {
+      const input = { title, body, categoryId: categoryId || undefined, visibleCategoryIds };
+      if (postId) {
+        await orgApi.updateBulletinPost(postId, input);
+        navigate(`/bulletin/${postId}`);
+      } else {
+        const post = await orgApi.createBulletinPost(input);
+        navigate(`/bulletin/${post.postId}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "投稿の保存に失敗しました");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -39,8 +86,8 @@ export function BulletinEditPage() {
       </label>
       <label>
         カテゴリー：
-        <select defaultValue={existingPost?.categoryId ?? mockBulletinCategories[0]?.categoryId}>
-          {mockBulletinCategories.map((c) => (
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          {bulletinCategories.map((c) => (
             <option key={c.categoryId} value={c.categoryId}>
               {c.name}
             </option>
@@ -55,7 +102,11 @@ export function BulletinEditPage() {
         <h3>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</h3>
         {memberCategories.map((c) => (
           <label key={c.categoryId} style={{ display: "block" }}>
-            <input type="checkbox" defaultChecked={existingPost?.visibleCategoryIds.includes(c.categoryId)} />
+            <input
+              type="checkbox"
+              checked={visibleCategoryIds.includes(c.categoryId)}
+              onChange={() => toggleVisibleCategory(c.categoryId)}
+            />
             {c.name}
           </label>
         ))}
@@ -66,7 +117,8 @@ export function BulletinEditPage() {
           <input type="file" multiple />
         </label>
       </div>
-      <button type="button" onClick={handleSave} style={{ marginTop: 12 }}>
+      {error && <p style={{ color: colors.danger, fontSize: 13 }}>{error}</p>}
+      <button type="button" onClick={handleSave} disabled={saving} style={{ marginTop: 12 }}>
         保存
       </button>
     </div>

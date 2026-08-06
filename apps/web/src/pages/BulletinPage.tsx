@@ -1,11 +1,10 @@
 import { Link } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, Search } from "lucide-react";
-import { mockBulletinPosts, mockBulletinCategories } from "@on-connect/shared";
+import { mockBulletinPosts, type BulletinPost } from "@on-connect/shared";
 import { colors } from "../theme/colors";
-
-const categoryName = (categoryId: string | undefined) =>
-  mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
+import { useOrgData } from "../context/OrgDataContext";
+import { orgApi } from "../api/orgApi";
 
 const stripHtml = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 
@@ -20,9 +19,24 @@ const previewText = (html: string, maxLength = 90) => {
  * TODO: GET /bulletin-posts にサーバーサイド検索を実装する（現状はクライアント側フィルタ）。
  */
 export function BulletinPage() {
+  const { bulletinCategories } = useOrgData();
+  const categoryName = (categoryId: string | undefined) =>
+    bulletinCategories.find((c) => c.categoryId === categoryId)?.name;
   const [categoryId, setCategoryId] = useState<string>("all");
   const [query, setQuery] = useState("");
-  const posts = [...mockBulletinPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const [rawPosts, setRawPosts] = useState<BulletinPost[]>(mockBulletinPosts);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setRawPosts(await orgApi.listBulletinPosts());
+      } catch {
+        setRawPosts(mockBulletinPosts);
+      }
+    })();
+  }, []);
+
+  const posts = [...rawPosts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const filteredPosts = posts
     .filter((p) => categoryId === "all" || p.categoryId === categoryId)
     .filter((p) => {
@@ -51,7 +65,7 @@ export function BulletinPage() {
         <button onClick={() => setCategoryId("all")} disabled={categoryId === "all"}>
           すべて
         </button>
-        {mockBulletinCategories.map((c) => (
+        {bulletinCategories.map((c) => (
           <button key={c.categoryId} onClick={() => setCategoryId(c.categoryId)} disabled={c.categoryId === categoryId}>
             {c.name}
           </button>
