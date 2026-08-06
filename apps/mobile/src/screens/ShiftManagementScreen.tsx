@@ -47,7 +47,7 @@ const NAME_WIDTH = 88;
  * ヘッダーに曜日・祝日、日付の下にメモ欄と当番人数の集計、右端にメンバー別の月間当番・シフト回数を表示する。
  * Phase 8c：GET /member-daily-status?date=... / GET /daily-notes/{date} をAPIに接続。
  * 両エンドポイントとも1日単位のみ対応のため、月表示のたびに日付ごとにループしてリクエストする。
- * 注：名前列は固定表示せず、行全体が横スクロールする簡易実装（Web版は名前列を固定表示）。
+ * 名前列は横スクロールの影響を受けない固定列とし、ログイン中メンバー自身の行はハイライト表示する。
  */
 export function ShiftManagementScreen() {
   const { currentUser } = useAuth();
@@ -59,6 +59,12 @@ export function ShiftManagementScreen() {
   const [notes, setNotes] = useState<DailyNote[]>(mockDailyNotes);
   const [editing, setEditing] = useState<{ userId: string; date: string } | null>(null);
   const [editingNoteDate, setEditingNoteDate] = useState<string | null>(null);
+  // 名前列（左固定）と日付セル列（横スクロール）は別々のViewツリーのため、行の高さが
+  // 自動では揃わない。データ側セルの実測高さを保持し、名前側の対応セルに同じ高さを与えて揃える。
+  const [rowHeights, setRowHeights] = useState<Record<string, number>>({});
+  const reportRowHeight = (key: string, height: number) => {
+    setRowHeights((prev) => (prev[key] === height ? prev : { ...prev, [key]: height }));
+  };
 
   const canEdit = currentUser?.permissions.manageShifts ?? false;
 
@@ -171,142 +177,162 @@ export function ShiftManagementScreen() {
       </View>
       <Text style={styles.hint}>
         {canEdit ? "セルをタップすると編集できます。" : "閲覧のみです（編集には管理者権限が必要です）。"}
+        {" "}あなたの行はハイライト表示されます。
       </Text>
-      <ScrollView horizontal>
-        <View>
-          <View style={styles.row}>
-            <View style={[styles.cell, { width: NAME_WIDTH }]} />
-            {days.map((d) => {
-              const date = dateKey(year, month, d);
-              const weekday = weekdayLabelForDate(date);
-              const holiday = holidayNameForDate(date);
-              const isRedDay = weekday === "日" || !!holiday;
-              const isSaturday = weekday === "土";
-              return (
-                <View
-                  key={d}
-                  style={[
-                    styles.cell,
-                    { width: CELL_WIDTH },
-                    (isRedDay || isSaturday) && { backgroundColor: colors.surface },
-                  ]}
-                >
-                  <Text style={[styles.headerText, isRedDay && { color: colors.danger, fontWeight: "700" }]}>
-                    {d} ({weekday})
-                  </Text>
-                  {holiday && (
-                    <Text style={styles.holidayText} numberOfLines={1}>
-                      {holiday}
-                    </Text>
-                  )}
-                </View>
-              );
-            })}
-            {activeDutyTypes.map((d) => (
-              <View key={d.dutyTypeId} style={[styles.cell, styles.summaryCell, { width: SUMMARY_WIDTH }]}>
-                <Text style={styles.summaryHeaderLabel}>当番</Text>
-                <Text style={styles.headerText} numberOfLines={1}>
-                  {d.name}
-                </Text>
-              </View>
-            ))}
-            {activeShiftTypes.map((s) => (
-              <View key={s.shiftTypeId} style={[styles.cell, { width: SUMMARY_WIDTH }]}>
-                <Text style={styles.summaryHeaderLabel}>シフト</Text>
-                <Text style={styles.headerText} numberOfLines={1}>
-                  {s.name}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.row}>
-            <View style={[styles.cell, { width: NAME_WIDTH }]}>
+      {/* 名前列を左端に固定し、日付・集計列だけを横スクロールする（縦スクロールは全体で連動） */}
+      <ScrollView style={styles.flexFill}>
+        <View style={styles.tableRow}>
+          <View style={styles.nameColumn}>
+            <View style={[styles.cell, { width: NAME_WIDTH, height: rowHeights.header }]} />
+            <View style={[styles.cell, { width: NAME_WIDTH, height: rowHeights.memo }]}>
               <Text style={styles.nameText}>メモ</Text>
             </View>
-            {days.map((d) => {
-              const date = dateKey(year, month, d);
-              const note = noteFor(date);
-              return (
-                <Pressable
-                  key={d}
-                  onPress={() => canEdit && setEditingNoteDate(date)}
-                  style={[styles.cell, { width: CELL_WIDTH }]}
-                >
-                  <Text style={styles.noteText} numberOfLines={3}>
-                    {note?.note}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <View style={styles.row}>
-            <View style={[styles.cell, { width: NAME_WIDTH }]}>
+            <View style={[styles.cell, { width: NAME_WIDTH, height: rowHeights.duty }]}>
               <Text style={styles.nameText}>当番人数</Text>
             </View>
-            {days.map((d) => {
-              const date = dateKey(year, month, d);
-              const counts = Object.entries(dutyCountsByDate[date] ?? {});
-              return (
-                <View key={d} style={[styles.cell, { width: CELL_WIDTH }]}>
-                  {counts.map(([id, count]) => (
-                    <Text key={id} style={styles.dutyText}>
-                      {dutyName(id)}:{count}
-                    </Text>
-                  ))}
-                </View>
-              );
-            })}
+            {members.map((m) => (
+              <View
+                key={m.userId}
+                style={[
+                  styles.cell,
+                  { width: NAME_WIDTH, height: rowHeights[m.userId] },
+                  m.userId === currentUser?.userId && styles.selfCell,
+                ]}
+              >
+                <Text style={styles.nameText} numberOfLines={1}>
+                  {m.displayName}
+                </Text>
+              </View>
+            ))}
           </View>
 
-          <ScrollView>
-            {members.map((m) => (
-              <View key={m.userId} style={styles.row}>
-                <View style={[styles.cell, { width: NAME_WIDTH }]}>
-                  <Text style={styles.nameText} numberOfLines={1}>
-                    {m.displayName}
-                  </Text>
-                </View>
+          <ScrollView horizontal>
+            <View>
+              <View style={styles.row} onLayout={(e) => reportRowHeight("header", e.nativeEvent.layout.height)}>
                 {days.map((d) => {
                   const date = dateKey(year, month, d);
-                  const status = statusFor(m.userId, date);
+                  const weekday = weekdayLabelForDate(date);
+                  const holiday = holidayNameForDate(date);
+                  const isRedDay = weekday === "日" || !!holiday;
+                  const isSaturday = weekday === "土";
                   return (
-                    <Pressable
+                    <View
                       key={d}
-                      onPress={() => canEdit && setEditing({ userId: m.userId, date })}
-                      style={[styles.cell, { width: CELL_WIDTH }]}
+                      style={[
+                        styles.cell,
+                        { width: CELL_WIDTH },
+                        (isRedDay || isSaturday) && { backgroundColor: colors.surface },
+                      ]}
                     >
-                      {status?.leaveType && <Text style={styles.leaveText}>{leaveLabel[status.leaveType]}</Text>}
-                      {status?.amShiftTypeId && (
-                        <Text style={styles.cellText}>
-                          {status.amShiftTypeId === status.pmShiftTypeId ? "" : "AM:"}
-                          {shiftName(status.amShiftTypeId)}
+                      <Text style={[styles.headerText, isRedDay && { color: colors.danger, fontWeight: "700" }]}>
+                        {d} ({weekday})
+                      </Text>
+                      {holiday && (
+                        <Text style={styles.holidayText} numberOfLines={1}>
+                          {holiday}
                         </Text>
                       )}
-                      {status?.pmShiftTypeId && status.pmShiftTypeId !== status.amShiftTypeId && (
-                        <Text style={styles.cellText}>PM:{shiftName(status.pmShiftTypeId)}</Text>
-                      )}
-                      {status?.dutyTypeIds?.map((id) => (
-                        <Text key={id} style={styles.dutyText}>
-                          {dutyName(id)}
-                        </Text>
-                      ))}
-                    </Pressable>
+                    </View>
                   );
                 })}
                 {activeDutyTypes.map((d) => (
                   <View key={d.dutyTypeId} style={[styles.cell, styles.summaryCell, { width: SUMMARY_WIDTH }]}>
-                    <Text style={styles.summaryValue}>{dutyCountsByMember[m.userId]?.[d.dutyTypeId] || ""}</Text>
+                    <Text style={styles.summaryHeaderLabel}>当番</Text>
+                    <Text style={styles.headerText} numberOfLines={1}>
+                      {d.name}
+                    </Text>
                   </View>
                 ))}
                 {activeShiftTypes.map((s) => (
                   <View key={s.shiftTypeId} style={[styles.cell, { width: SUMMARY_WIDTH }]}>
-                    <Text style={styles.summaryValue}>{shiftCountsByMember[m.userId]?.[s.shiftTypeId] || ""}</Text>
+                    <Text style={styles.summaryHeaderLabel}>シフト</Text>
+                    <Text style={styles.headerText} numberOfLines={1}>
+                      {s.name}
+                    </Text>
                   </View>
                 ))}
               </View>
-            ))}
+
+              <View style={styles.row} onLayout={(e) => reportRowHeight("memo", e.nativeEvent.layout.height)}>
+                {days.map((d) => {
+                  const date = dateKey(year, month, d);
+                  const note = noteFor(date);
+                  return (
+                    <Pressable
+                      key={d}
+                      onPress={() => canEdit && setEditingNoteDate(date)}
+                      style={[styles.cell, { width: CELL_WIDTH }]}
+                    >
+                      <Text style={styles.noteText} numberOfLines={3}>
+                        {note?.note}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <View style={styles.row} onLayout={(e) => reportRowHeight("duty", e.nativeEvent.layout.height)}>
+                {days.map((d) => {
+                  const date = dateKey(year, month, d);
+                  const counts = Object.entries(dutyCountsByDate[date] ?? {});
+                  return (
+                    <View key={d} style={[styles.cell, { width: CELL_WIDTH }]}>
+                      {counts.map(([id, count]) => (
+                        <Text key={id} style={styles.dutyText}>
+                          {dutyName(id)}:{count}
+                        </Text>
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+
+              {members.map((m) => (
+                <View
+                  key={m.userId}
+                  style={[styles.row, m.userId === currentUser?.userId && styles.selfCell]}
+                  onLayout={(e) => reportRowHeight(m.userId, e.nativeEvent.layout.height)}
+                >
+                  {days.map((d) => {
+                    const date = dateKey(year, month, d);
+                    const status = statusFor(m.userId, date);
+                    return (
+                      <Pressable
+                        key={d}
+                        onPress={() => canEdit && setEditing({ userId: m.userId, date })}
+                        style={[styles.cell, { width: CELL_WIDTH }]}
+                      >
+                        {status?.leaveType && <Text style={styles.leaveText}>{leaveLabel[status.leaveType]}</Text>}
+                        {status?.amShiftTypeId && (
+                          <Text style={styles.cellText}>
+                            {status.amShiftTypeId === status.pmShiftTypeId ? "" : "AM:"}
+                            {shiftName(status.amShiftTypeId)}
+                          </Text>
+                        )}
+                        {status?.pmShiftTypeId && status.pmShiftTypeId !== status.amShiftTypeId && (
+                          <Text style={styles.cellText}>PM:{shiftName(status.pmShiftTypeId)}</Text>
+                        )}
+                        {status?.dutyTypeIds?.map((id) => (
+                          <Text key={id} style={styles.dutyText}>
+                            {dutyName(id)}
+                          </Text>
+                        ))}
+                      </Pressable>
+                    );
+                  })}
+                  {activeDutyTypes.map((d) => (
+                    <View key={d.dutyTypeId} style={[styles.cell, styles.summaryCell, { width: SUMMARY_WIDTH }]}>
+                      <Text style={styles.summaryValue}>{dutyCountsByMember[m.userId]?.[d.dutyTypeId] || ""}</Text>
+                    </View>
+                  ))}
+                  {activeShiftTypes.map((s) => (
+                    <View key={s.shiftTypeId} style={[styles.cell, { width: SUMMARY_WIDTH }]}>
+                      <Text style={styles.summaryValue}>{shiftCountsByMember[m.userId]?.[s.shiftTypeId] || ""}</Text>
+                    </View>
+                  ))}
+                </View>
+              ))}
+            </View>
           </ScrollView>
         </View>
       </ScrollView>
@@ -529,6 +555,9 @@ const styles = StyleSheet.create({
   monthNav: { flexDirection: "row", alignItems: "center", gap: 8 },
   monthLabel: { fontWeight: "700" },
   hint: { fontSize: 12, color: colors.textMuted, marginVertical: 8 },
+  flexFill: { flex: 1 },
+  tableRow: { flexDirection: "row" },
+  nameColumn: { backgroundColor: colors.background },
   row: { flexDirection: "row" },
   cell: {
     minHeight: 44,
@@ -538,6 +567,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   summaryCell: { borderLeftWidth: 2 },
+  selfCell: { backgroundColor: "rgba(102, 255, 204, 0.35)" },
   headerText: { fontSize: 11, color: colors.textMuted, textAlign: "center" },
   holidayText: { fontSize: 8, color: colors.danger, textAlign: "center" },
   summaryHeaderLabel: { fontSize: 8, color: colors.textMuted, textAlign: "center" },

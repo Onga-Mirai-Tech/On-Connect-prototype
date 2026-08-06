@@ -169,6 +169,7 @@ export function ShiftManagementPage() {
         {canEdit
           ? "セルをタップすると休日・当番・シフトを編集できます。メモ欄も編集できます。"
           : "閲覧のみです（編集には管理者権限が必要です）。"}
+        {" "}あなたの行はハイライト表示されます。
       </p>
       <div style={{ overflowX: "auto", border: `1px solid ${colors.surface}`, borderRadius: 14 }}>
         <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
@@ -304,13 +305,17 @@ export function ShiftManagementPage() {
               })}
               <td colSpan={summaryColumnCount} style={{ borderTop: `1px solid ${colors.surface}` }} />
             </tr>
-            {members.map((m) => (
+            {members.map((m) => {
+              const isSelf = m.userId === currentUser?.userId;
+              const selfBackground = "rgba(102, 255, 204, 0.35)";
+              return (
               <tr key={m.userId}>
                 <td
                   style={{
                     position: "sticky",
                     left: 0,
-                    background: colors.background,
+                    zIndex: 1,
+                    background: isSelf ? selfBackground : colors.background,
                     padding: 6,
                     fontWeight: 700,
                     whiteSpace: "nowrap",
@@ -332,7 +337,7 @@ export function ShiftManagementPage() {
                         padding: 4,
                         verticalAlign: "top",
                         cursor: canEdit ? "pointer" : "default",
-                        background: isEditingCell ? colors.surface : undefined,
+                        background: isEditingCell ? colors.surface : isSelf ? selfBackground : undefined,
                         minWidth: 60,
                       }}
                     >
@@ -382,7 +387,8 @@ export function ShiftManagementPage() {
                   </td>
                 ))}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

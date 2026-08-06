@@ -115,7 +115,14 @@ export function CalendarScreen({ navigation }: Props) {
 
       {viewMode === "month" && (
         <ScrollView style={styles.flexFill}>
-          <MonthGrid year={year} month={month} events={events} todayKey={todayKey} onSelectDay={goToWeek} />
+          <MonthGrid
+            year={year}
+            month={month}
+            events={events}
+            todayKey={todayKey}
+            onSelectDay={goToWeek}
+            onSelectEvent={goToDetail}
+          />
         </ScrollView>
       )}
       {viewMode === "week" && (
@@ -136,12 +143,14 @@ function MonthGrid({
   events,
   todayKey,
   onSelectDay,
+  onSelectEvent,
 }: {
   year: number;
   month: number;
   events: CalendarEvent[];
   todayKey: string;
   onSelectDay: (dateKey: string) => void;
+  onSelectEvent: (eventId: string) => void;
 }) {
   const weeks = buildMonthGrid(year, month);
   const weekdayHeaders = ["月", "火", "水", "木", "金", "土", "日"];
@@ -168,7 +177,8 @@ function MonthGrid({
             const isRedDay = weekday === "日" || !!holiday;
             const isSaturday = weekday === "土";
             const isToday = cell.dateKey === todayKey;
-            const dotCount = Math.min(dayEvents.length, 3);
+            const visibleEvents = dayEvents.slice(0, 3);
+            const overflow = dayEvents.length - visibleEvents.length;
 
             return (
               <Pressable
@@ -179,11 +189,15 @@ function MonthGrid({
                 <Text style={[styles.monthCellText, isRedDay && { color: colors.danger }, isSaturday && { color: colors.brandDark }]}>
                   {day.getDate()}
                 </Text>
-                <View style={styles.dotsRow}>
-                  {Array.from({ length: dotCount }).map((_, i) => (
-                    <View key={i} style={styles.dot} />
+                <View style={styles.eventPillList}>
+                  {visibleEvents.map((e) => (
+                    <Pressable key={e.eventId} onPress={() => onSelectEvent(e.eventId)} style={styles.eventPill}>
+                      <Text style={styles.eventPillText} numberOfLines={1}>
+                        {e.title}
+                      </Text>
+                    </Pressable>
                   ))}
-                  {dayEvents.length > 3 && <Text style={styles.dotOverflow}>+</Text>}
+                  {overflow > 0 && <Text style={styles.dotOverflow}>+{overflow}件</Text>}
                 </View>
               </Pressable>
             );
@@ -309,18 +323,20 @@ const styles = StyleSheet.create({
   gridRow: { flexDirection: "row" },
   monthCell: {
     width: `${100 / 7}%`,
-    minHeight: 48,
-    alignItems: "center",
+    minHeight: 76,
+    alignItems: "stretch",
     paddingVertical: 4,
+    paddingHorizontal: 2,
     borderWidth: 1,
     borderColor: colors.surface,
   },
   monthCellToday: { borderColor: colors.brandDark, borderWidth: 2 },
   monthCellFaded: { opacity: 0.4 },
-  monthCellText: { fontSize: 12 },
-  dotsRow: { flexDirection: "row", gap: 2, marginTop: 3 },
-  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.brandDark },
-  dotOverflow: { fontSize: 10, color: colors.textMuted },
+  monthCellText: { fontSize: 12, textAlign: "center" },
+  eventPillList: { gap: 2, marginTop: 3 },
+  eventPill: { backgroundColor: colors.brand, borderRadius: 4, paddingHorizontal: 3, paddingVertical: 1 },
+  eventPillText: { fontSize: 9, color: colors.text },
+  dotOverflow: { fontSize: 9, color: colors.textMuted },
 
   agendaSection: { marginBottom: 12 },
   agendaHeaderRow: {
