@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
-  mockMembers,
   mockMemberDailyStatuses,
   mockDutyTypes,
   mockShiftTypes,
@@ -15,6 +14,7 @@ import {
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 const leaveLabel: Record<LeaveType, string> = { FULL: "休", AM: "午前休", PM: "午後休" };
 const leaveReasonLabel: Record<LeaveReason, string> = { REQUESTED: "希望休", ASSIGNED: "指定休" };
@@ -46,6 +46,7 @@ const activeShiftTypes = mockShiftTypes.filter((s) => s.isActive);
  */
 export function ShiftManagementPage() {
   const { currentUserId, currentUser } = useAuth();
+  const { members } = useOrgData();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
@@ -75,7 +76,7 @@ export function ShiftManagementPage() {
   // メンバーごとの月間当番回数・シフト回数（午前午後は別カウント）
   const dutyCountsByMember: Record<string, Record<string, number>> = {};
   const shiftCountsByMember: Record<string, Record<string, number>> = {};
-  for (const m of mockMembers) {
+  for (const m of members) {
     const memberStatuses = statuses.filter((s) => s.userId === m.userId && monthDates.includes(s.date));
     dutyCountsByMember[m.userId] = countBy(memberStatuses.flatMap((s) => s.dutyTypeIds ?? []));
     const shiftIds = memberStatuses.flatMap((s) =>
@@ -301,7 +302,7 @@ export function ShiftManagementPage() {
               })}
               <td colSpan={summaryColumnCount} style={{ borderTop: `1px solid ${colors.surface}` }} />
             </tr>
-            {mockMembers.map((m) => (
+            {members.map((m) => (
               <tr key={m.userId}>
                 <td
                   style={{
@@ -386,7 +387,7 @@ export function ShiftManagementPage() {
 
       {editing && (
         <EditPanel
-          member={mockMembers.find((m) => m.userId === editing.userId)}
+          member={members.find((m) => m.userId === editing.userId)}
           date={editing.date}
           status={statusFor(editing.userId, editing.date)}
           onSave={(patch) => handleSave(editing.userId, editing.date, patch)}

@@ -2,22 +2,15 @@ import { useState } from "react";
 import { View, Text, TextInput, Pressable, Switch, StyleSheet, FlatList } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import {
-  mockChatRooms,
-  mockMembers,
-  mockMessages,
-  toggleReaction,
-  type Message,
-} from "@on-connect/shared";
+import { mockChatRooms, mockMessages, toggleReaction, type Message } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatRoom">;
-
-const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 
 /** 本文末尾の "@検索語" にマッチする（カーソルが末尾にある前提の簡易実装） */
 const mentionPattern = /@([^\s@]*)$/;
@@ -29,10 +22,12 @@ const mentionPattern = /@([^\s@]*)$/;
  */
 export function ChatRoomScreen({ route }: Props) {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
   const { roomId } = route.params;
+  const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
   const room = mockChatRooms.find((r) => r.roomId === roomId);
   const otherMemberId = room?.memberUserIds.find((id) => id !== currentUserId);
-  const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
+  const otherMember = members.find((m) => m.userId === otherMemberId);
   const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "") : roomId;
   const participantNames = room?.isGroup ? room.memberUserIds.map((id) => memberName(id)).join("、") : "";
 
@@ -41,7 +36,7 @@ export function ChatRoomScreen({ route }: Props) {
   const [forceNotify, setForceNotify] = useState(false);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
 
-  const roomMembers = mockMembers.filter(
+  const roomMembers = members.filter(
     (m) => room?.memberUserIds.includes(m.userId) && m.userId !== currentUserId,
   );
   const mentionMatch = mentionPattern.exec(body);

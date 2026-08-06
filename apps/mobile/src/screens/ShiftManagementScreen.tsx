@@ -2,7 +2,6 @@ import { useState } from "react";
 import { View, Text, Pressable, ScrollView, TextInput, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
-  mockMembers,
   mockMemberDailyStatuses,
   mockDutyTypes,
   mockShiftTypes,
@@ -16,6 +15,7 @@ import {
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 const leaveLabel: Record<LeaveType, string> = { FULL: "休", AM: "午前休", PM: "午後休" };
 const leaveReasonLabel: Record<LeaveReason, string> = { REQUESTED: "希望休", ASSIGNED: "指定休" };
@@ -52,6 +52,7 @@ const NAME_WIDTH = 88;
  */
 export function ShiftManagementScreen() {
   const { currentUserId, currentUser } = useAuth();
+  const { members } = useOrgData();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -81,7 +82,7 @@ export function ShiftManagementScreen() {
   // メンバーごとの月間当番回数・シフト回数（午前午後は別カウント）
   const dutyCountsByMember: Record<string, Record<string, number>> = {};
   const shiftCountsByMember: Record<string, Record<string, number>> = {};
-  for (const m of mockMembers) {
+  for (const m of members) {
     const memberStatuses = statuses.filter((s) => s.userId === m.userId && monthDates.includes(s.date));
     dutyCountsByMember[m.userId] = countBy(memberStatuses.flatMap((s) => s.dutyTypeIds ?? []));
     const shiftIds = memberStatuses.flatMap((s) =>
@@ -259,7 +260,7 @@ export function ShiftManagementScreen() {
           </View>
 
           <ScrollView>
-            {mockMembers.map((m) => (
+            {members.map((m) => (
               <View key={m.userId} style={styles.row}>
                 <View style={[styles.cell, { width: NAME_WIDTH }]}>
                   <Text style={styles.nameText} numberOfLines={1}>
@@ -311,7 +312,7 @@ export function ShiftManagementScreen() {
 
       {editing && (
         <EditPanel
-          memberName={mockMembers.find((m) => m.userId === editing.userId)?.displayName}
+          memberName={members.find((m) => m.userId === editing.userId)?.displayName}
           date={editing.date}
           status={statusFor(editing.userId, editing.date)}
           onSave={(patch) => handleSave(editing.userId, editing.date, patch)}

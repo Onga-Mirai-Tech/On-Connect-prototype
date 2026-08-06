@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { mockCalendarEvents, mockCalendarCategories, mockMemberCategories } from "@on-connect/shared";
+import { mockCalendarEvents, mockCalendarCategories } from "@on-connect/shared";
+import { useOrgData } from "../context/OrgDataContext";
 
 /**
  * カレンダー予定の作成・編集画面。全メンバーが作成・編集できる（バックエンド側に権限チェックは無い）。
@@ -9,6 +10,7 @@ import { mockCalendarEvents, mockCalendarCategories, mockMemberCategories } from
 export function CalendarEventEditPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
+  const { memberCategories } = useOrgData();
   const existingEvent = eventId ? mockCalendarEvents.find((e) => e.eventId === eventId) : undefined;
 
   const [title, setTitle] = useState(existingEvent?.title ?? "");
@@ -74,7 +76,7 @@ export function CalendarEventEditPage() {
       </label>
       <div>
         <h3>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</h3>
-        {mockMemberCategories.map((c) => (
+        {memberCategories.map((c) => (
           <label key={c.categoryId} style={{ display: "block" }}>
             <input type="checkbox" defaultChecked={existingEvent?.visibleCategoryIds.includes(c.categoryId)} />
             {c.name}

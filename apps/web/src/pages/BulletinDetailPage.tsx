@@ -5,7 +5,6 @@ import {
   mockBulletinPosts,
   mockBulletinComments,
   mockBulletinCategories,
-  mockMembers,
   toggleReaction,
   type BulletinPost,
   type BulletinComment,
@@ -13,8 +12,8 @@ import {
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
-const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 const categoryName = (categoryId: string | undefined) =>
   mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
 
@@ -24,6 +23,8 @@ const categoryName = (categoryId: string | undefined) =>
  */
 export function BulletinDetailPage() {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
+  const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
   const { postId = "" } = useParams();
   const initialPost = mockBulletinPosts.find((p) => p.postId === postId);
 

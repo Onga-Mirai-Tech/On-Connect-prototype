@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockCalendarEvents, mockCalendarCategories, mockMemberCategories } from "@on-connect/shared";
+import { mockCalendarEvents, mockCalendarCategories } from "@on-connect/shared";
 import type { CalendarStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useOrgData } from "../context/OrgDataContext";
 
 type Props = NativeStackScreenProps<CalendarStackParamList, "CalendarEventEdit">;
 
@@ -13,6 +14,7 @@ type Props = NativeStackScreenProps<CalendarStackParamList, "CalendarEventEdit">
  */
 export function CalendarEventEditScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
+  const { memberCategories } = useOrgData();
   const existingEvent = eventId ? mockCalendarEvents.find((e) => e.eventId === eventId) : undefined;
 
   const [title, setTitle] = useState(existingEvent?.title ?? "");
@@ -50,7 +52,7 @@ export function CalendarEventEditScreen({ route, navigation }: Props) {
           mockCalendarCategories[0]?.name}
       </Text>
       <Text style={styles.label}>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</Text>
-      {mockMemberCategories.map((c) => (
+      {memberCategories.map((c) => (
         <Text key={c.categoryId} style={styles.category}>
           {existingEvent?.visibleCategoryIds.includes(c.categoryId) ? "☑" : "☐"} {c.name}
         </Text>

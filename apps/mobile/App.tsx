@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import { NotificationStatusProvider } from "./src/context/NotificationStatusContext";
+import { OrgDataProvider } from "./src/context/OrgDataContext";
 
 /** Amplifyがセッションを解決するまでの間、ナビゲーションを開始しない（未ログイン判定のちらつき防止） */
 function AppContent() {
@@ -14,10 +15,12 @@ function AppContent() {
     return <View style={{ flex: 1 }} />;
   }
   return (
-    <NotificationStatusProvider>
-      <AppNavigator />
-      <StatusBar style="auto" />
-    </NotificationStatusProvider>
+    <OrgDataProvider>
+      <NotificationStatusProvider>
+        <AppNavigator />
+        <StatusBar style="auto" />
+      </NotificationStatusProvider>
+    </OrgDataProvider>
   );
 }
 

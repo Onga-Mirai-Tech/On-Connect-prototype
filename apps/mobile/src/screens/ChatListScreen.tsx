@@ -2,10 +2,11 @@ import { useState } from "react";
 import { View, Text, TextInput, FlatList, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockChatRooms, mockMembers, mockMessages } from "@on-connect/shared";
+import { mockChatRooms, mockMessages } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatList">;
 
@@ -16,13 +17,14 @@ type Props = NativeStackScreenProps<ChatStackParamList, "ChatList">;
  */
 export function ChatListScreen({ navigation }: Props) {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
   const [query, setQuery] = useState("");
 
   const rooms = mockChatRooms
     .filter((room) => room.memberUserIds.includes(currentUserId ?? ""))
     .map((room) => {
       const otherMemberId = room.memberUserIds.find((id) => id !== currentUserId);
-      const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
+      const otherMember = members.find((m) => m.userId === otherMemberId);
       const displayName = room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "不明なメンバー";
       const roomMessages = mockMessages[room.roomId] ?? [];
       const lastMessage = roomMessages[roomMessages.length - 1];

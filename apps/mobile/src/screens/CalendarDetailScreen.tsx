@@ -4,21 +4,16 @@ import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import {
-  mockCalendarEvents,
-  mockCalendarCategories,
-  mockMembers,
-  buildIcsForEvent,
-} from "@on-connect/shared";
+import { mockCalendarEvents, mockCalendarCategories, buildIcsForEvent } from "@on-connect/shared";
 import type { CalendarStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 type Props = NativeStackScreenProps<CalendarStackParamList, "CalendarDetail">;
 
 const categoryName = (categoryId: string | undefined) =>
   mockCalendarCategories.find((c) => c.categoryId === categoryId)?.name;
-const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 
 const formatRange = (startAt: string, endAt: string) => {
   const start = new Date(startAt);
@@ -35,6 +30,8 @@ const formatRange = (startAt: string, endAt: string) => {
  */
 export function CalendarDetailScreen({ route, navigation }: Props) {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
+  const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
   const { eventId } = route.params;
   const [event] = useState(() => mockCalendarEvents.find((e) => e.eventId === eventId));
 

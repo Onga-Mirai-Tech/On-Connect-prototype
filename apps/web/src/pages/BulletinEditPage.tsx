@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { mockBulletinPosts, mockBulletinCategories, mockMemberCategories } from "@on-connect/shared";
+import { mockBulletinPosts, mockBulletinCategories } from "@on-connect/shared";
 import { HtmlEditor } from "../components/HtmlEditor";
+import { useOrgData } from "../context/OrgDataContext";
 
 /**
  * 掲示板投稿・編集画面（7章 7番）
@@ -11,6 +12,7 @@ import { HtmlEditor } from "../components/HtmlEditor";
 export function BulletinEditPage() {
   const { postId } = useParams();
   const navigate = useNavigate();
+  const { memberCategories } = useOrgData();
   const existingPost = postId ? mockBulletinPosts.find((p) => p.postId === postId) : undefined;
 
   const [title, setTitle] = useState(existingPost?.title ?? "");
@@ -51,7 +53,7 @@ export function BulletinEditPage() {
       </div>
       <div>
         <h3>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</h3>
-        {mockMemberCategories.map((c) => (
+        {memberCategories.map((c) => (
           <label key={c.categoryId} style={{ display: "block" }}>
             <input type="checkbox" defaultChecked={existingPost?.visibleCategoryIds.includes(c.categoryId)} />
             {c.name}

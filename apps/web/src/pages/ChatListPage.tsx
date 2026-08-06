@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { UserPlus, Users, User, Search } from "lucide-react";
-import { mockChatRooms, mockMembers, mockMessages } from "@on-connect/shared";
+import { mockChatRooms, mockMessages } from "@on-connect/shared";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 /**
  * チャット一覧画面（7章 3番）：1対1／グループチャットの一覧、既読／未読表示
@@ -12,13 +13,14 @@ import { useAuth } from "../context/AuthContext";
  */
 export function ChatListPage() {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
   const [query, setQuery] = useState("");
 
   const rooms = mockChatRooms
     .filter((room) => room.memberUserIds.includes(currentUserId ?? ""))
     .map((room) => {
       const otherMemberId = room.memberUserIds.find((id) => id !== currentUserId);
-      const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
+      const otherMember = members.find((m) => m.userId === otherMemberId);
       const displayName = room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "不明なメンバー";
       const roomMessages = mockMessages[room.roomId] ?? [];
       const lastMessage = roomMessages[roomMessages.length - 1];

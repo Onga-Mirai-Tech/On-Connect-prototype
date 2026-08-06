@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState } from "react";
 import {
   Users,
   ShieldCheck,
@@ -8,22 +8,16 @@ import {
   CalendarCog,
   UserPlus,
   KeyRound,
+  Pencil,
+  Trash2,
 } from "lucide-react";
-import { fetchAuthSession } from "aws-amplify/auth";
-import type { RolePermissions, User } from "@on-connect/shared";
-import {
-  mockMembers,
-  mockRoles,
-  mockMemberCategories,
-  mockBulletinCategories,
-  mockCalendarCategories,
-  mockOrgLinks,
-} from "@on-connect/shared";
+import type { RolePermissions } from "@on-connect/shared";
+import { mockBulletinCategories, mockCalendarCategories, mockOrgLinks } from "@on-connect/shared";
 import { colors } from "../theme/colors";
+import { orgApi, type AdminUser } from "../api/orgApi";
+import { useOrgData } from "../context/OrgDataContext";
 
 type AdminTab = "users" | "roles" | "memberCategories" | "bulletinCategories" | "links" | "calendarCategories";
-
-type AdminUser = User & { loginStatus?: string };
 
 /** 権限は今後ここにロールではなくメンバー単位で持たせる（設計変更により`Role`からは`permissions`が無くなった） */
 const permissionLabels: Record<keyof RolePermissions, string> = {
@@ -43,18 +37,6 @@ const loginStatusLabel: Record<string, string> = {
   UNPROVISIONED: "未発行",
 };
 
-const API_URL = import.meta.env.VITE_API_URL;
-
-/** Cognitoのトークンを付けてREST APIを呼ぶ（Phase 8a：スタッフ追加・ログイン状況・パスワード再発行のみ本物のAPIに接続する） */
-async function authFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const session = await fetchAuthSession();
-  const token = session.tokens?.idToken?.toString() ?? "";
-  return fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: { ...options.headers, Authorization: token, "Content-Type": "application/json" },
-  });
-}
-
 /** 次のログインID候補（staffNN方式）を提案する。既存の番号の最大値+1、編集可能。 */
 function suggestNextLoginId(members: AdminUser[]): string {
   const numbers = members
@@ -68,35 +50,29 @@ function suggestNextLoginId(members: AdminUser[]): string {
 /**
  * 管理者用設定画面（7章 11番）
  * ユーザー管理（メンバー個別の権限ON/OFF編集・スタッフ追加・ログイン状況確認・パスワード再発行）
- * ／ロール管理（名前ラベルのみ）／メンバーカテゴリ管理／掲示板カテゴリー管理／リンク集管理
- * ／カレンダーカテゴリー管理
+ * ／ロール管理／メンバーカテゴリ管理／掲示板カテゴリー管理／リンク集管理／カレンダーカテゴリー管理
+ * Phase 8b：ユーザー・ロール・メンバーカテゴリは本物のREST APIに接続済み（未接続時はダミーデータにフォールバック）。
  */
 export function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("users");
-  const [members, setMembers] = useState<AdminUser[]>(mockMembers);
+  const { members, roles, memberCategories, refetchMembers, refetchRoles, refetchMemberCategories } = useOrgData();
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [permissionPendingUserId, setPermissionPendingUserId] = useState<string | null>(null);
+  const [permissionError, setPermissionError] = useState("");
 
-  // ユーザー一覧はAPI接続を試み、未デプロイ等で失敗した場合はダミーデータで表示する（Phase 8a）
-  useEffect(() => {
-    (async () => {
-      try {
-        if (!API_URL) throw new Error("API未接続");
-        const res = await authFetch("/users");
-        if (!res.ok) throw new Error("メンバー一覧の取得に失敗しました");
-        setMembers((await res.json()) as AdminUser[]);
-      } catch {
-        setMembers(mockMembers);
-      }
-    })();
-  }, []);
-
-  const togglePermission = (userId: string, key: keyof RolePermissions) => {
-    // TODO: PUT /users/{userId} で permissions を更新する（現状はローカルstateのみ）
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.userId === userId ? { ...m, permissions: { ...m.permissions, [key]: !m.permissions[key] } } : m,
-      ),
-    );
+  const togglePermission = async (userId: string, key: keyof RolePermissions) => {
+    const member = members.find((m) => m.userId === userId);
+    if (!member) return;
+    setPermissionError("");
+    setPermissionPendingUserId(userId);
+    try {
+      await orgApi.updateUser(userId, { permissions: { ...member.permissions, [key]: !member.permissions[key] } });
+      await refetchMembers();
+    } catch (err) {
+      setPermissionError(err instanceof Error ? err.message : "権限の更新に失敗しました");
+    } finally {
+      setPermissionPendingUserId(null);
+    }
   };
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -104,8 +80,8 @@ export function AdminPage() {
     displayName: "",
     furigana: "",
     loginId: "",
-    roleId: mockRoles[0]?.roleId ?? "",
-    memberCategoryId: mockMemberCategories[0]?.categoryId ?? "",
+    roleId: roles[0]?.roleId ?? "",
+    memberCategoryId: memberCategories[0]?.categoryId ?? "",
   });
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [addError, setAddError] = useState("");
@@ -116,8 +92,8 @@ export function AdminPage() {
       displayName: "",
       furigana: "",
       loginId: suggestNextLoginId(members),
-      roleId: mockRoles[0]?.roleId ?? "",
-      memberCategoryId: mockMemberCategories[0]?.categoryId ?? "",
+      roleId: roles[0]?.roleId ?? "",
+      memberCategoryId: memberCategories[0]?.categoryId ?? "",
     });
     setAddResult(null);
     setAddError("");
@@ -129,22 +105,14 @@ export function AdminPage() {
     setAddError("");
     setAddSubmitting(true);
     try {
-      const res = await authFetch("/users", {
-        method: "POST",
-        body: JSON.stringify({
-          loginId: newStaff.loginId,
-          displayName: newStaff.displayName,
-          furigana: newStaff.furigana,
-          roleId: newStaff.roleId,
-          memberCategoryId: newStaff.memberCategoryId,
-        }),
+      const body = await orgApi.createUser({
+        loginId: newStaff.loginId,
+        displayName: newStaff.displayName,
+        furigana: newStaff.furigana,
+        roleId: newStaff.roleId,
+        memberCategoryId: newStaff.memberCategoryId,
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}) as { message?: string });
-        throw new Error(body.message ?? "スタッフの追加に失敗しました");
-      }
-      const body = (await res.json()) as { user: AdminUser; temporaryPassword: string };
-      setMembers((prev) => [...prev, body.user]);
+      await refetchMembers();
       setAddResult({ loginId: body.user.loginId, temporaryPassword: body.temporaryPassword });
       setShowAddForm(false);
     } catch (err) {
@@ -161,12 +129,100 @@ export function AdminPage() {
     setResetError("");
     setResetResult(null);
     try {
-      const res = await authFetch(`/users/${member.userId}/reset-password`, { method: "POST" });
-      if (!res.ok) throw new Error("パスワードの再発行に失敗しました");
-      const body = (await res.json()) as { temporaryPassword: string };
+      const body = await orgApi.resetPassword(member.userId);
       setResetResult({ loginId: member.loginId, temporaryPassword: body.temporaryPassword });
     } catch (err) {
       setResetError(err instanceof Error ? err.message : "パスワードの再発行に失敗しました");
+    }
+  };
+
+  // ロール管理
+  const [newRoleName, setNewRoleName] = useState("");
+  const [roleSubmitting, setRoleSubmitting] = useState(false);
+  const [roleError, setRoleError] = useState("");
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [editingRoleName, setEditingRoleName] = useState("");
+
+  const handleAddRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoleName.trim()) return;
+    setRoleError("");
+    setRoleSubmitting(true);
+    try {
+      await orgApi.createRole(newRoleName.trim());
+      await refetchRoles();
+      setNewRoleName("");
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : "ロールの追加に失敗しました");
+    } finally {
+      setRoleSubmitting(false);
+    }
+  };
+
+  const handleSaveRoleName = async (roleId: string) => {
+    if (!editingRoleName.trim()) return;
+    setRoleError("");
+    try {
+      await orgApi.updateRole(roleId, editingRoleName.trim());
+      await refetchRoles();
+      setEditingRoleId(null);
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : "ロールの更新に失敗しました");
+    }
+  };
+
+  const handleDeleteRole = async (roleId: string) => {
+    setRoleError("");
+    try {
+      await orgApi.deleteRole(roleId);
+      await refetchRoles();
+    } catch (err) {
+      setRoleError(err instanceof Error ? err.message : "ロールの削除に失敗しました");
+    }
+  };
+
+  // メンバーカテゴリ管理
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categorySubmitting, setCategorySubmitting] = useState(false);
+  const [categoryError, setCategoryError] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+    setCategoryError("");
+    setCategorySubmitting(true);
+    try {
+      await orgApi.createMemberCategory(newCategoryName.trim());
+      await refetchMemberCategories();
+      setNewCategoryName("");
+    } catch (err) {
+      setCategoryError(err instanceof Error ? err.message : "メンバーカテゴリの追加に失敗しました");
+    } finally {
+      setCategorySubmitting(false);
+    }
+  };
+
+  const handleSaveCategoryName = async (categoryId: string) => {
+    if (!editingCategoryName.trim()) return;
+    setCategoryError("");
+    try {
+      await orgApi.updateMemberCategory(categoryId, editingCategoryName.trim());
+      await refetchMemberCategories();
+      setEditingCategoryId(null);
+    } catch (err) {
+      setCategoryError(err instanceof Error ? err.message : "メンバーカテゴリの更新に失敗しました");
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    setCategoryError("");
+    try {
+      await orgApi.deleteMemberCategory(categoryId);
+      await refetchMemberCategories();
+    } catch (err) {
+      setCategoryError(err instanceof Error ? err.message : "メンバーカテゴリの削除に失敗しました");
     }
   };
 
@@ -253,7 +309,7 @@ export function AdminPage() {
                   onChange={(e) => setNewStaff((s) => ({ ...s, roleId: e.target.value }))}
                   style={{ display: "block", width: "100%", marginTop: 4 }}
                 >
-                  {mockRoles.map((r) => (
+                  {roles.map((r) => (
                     <option key={r.roleId} value={r.roleId}>
                       {r.name}
                     </option>
@@ -267,7 +323,7 @@ export function AdminPage() {
                   onChange={(e) => setNewStaff((s) => ({ ...s, memberCategoryId: e.target.value }))}
                   style={{ display: "block", width: "100%", marginTop: 4 }}
                 >
-                  {mockMemberCategories.map((c) => (
+                  {memberCategories.map((c) => (
                     <option key={c.categoryId} value={c.categoryId}>
                       {c.name}
                     </option>
@@ -342,7 +398,7 @@ export function AdminPage() {
             </div>
           )}
 
-          {/* TODO: ロール/メンバーカテゴリの割り当て・権限編集をAPIに接続する（現状はローカルstateのみ） */}
+          {permissionError && <p style={{ color: colors.danger, fontSize: 13 }}>{permissionError}</p>}
           <div style={{ border: `1px solid ${colors.surface}`, borderRadius: 14, overflow: "hidden", maxWidth: 720 }}>
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
@@ -360,8 +416,8 @@ export function AdminPage() {
                 <Fragment key={m.userId}>
                   <tr style={{ borderTop: `1px solid ${colors.surface}` }}>
                     <td style={{ padding: 6 }}>{m.displayName}</td>
-                    <td style={{ padding: 6 }}>{mockRoles.find((r) => r.roleId === m.roleId)?.name}</td>
-                    <td style={{ padding: 6 }}>{mockMemberCategories.find((c) => c.categoryId === m.memberCategoryId)?.name}</td>
+                    <td style={{ padding: 6 }}>{roles.find((r) => r.roleId === m.roleId)?.name}</td>
+                    <td style={{ padding: 6 }}>{memberCategories.find((c) => c.categoryId === m.memberCategoryId)?.name}</td>
                     <td style={{ padding: 6 }}>{m.notificationStatus === "ON" ? "オン" : "オフ"}</td>
                     <td style={{ padding: 6 }}>
                       {m.loginStatus ? (loginStatusLabel[m.loginStatus] ?? m.loginStatus) : "—"}
@@ -390,6 +446,7 @@ export function AdminPage() {
                               <input
                                 type="checkbox"
                                 checked={m.permissions[key]}
+                                disabled={permissionPendingUserId === m.userId}
                                 onChange={() => togglePermission(m.userId, key)}
                               />
                               {permissionLabels[key]}
@@ -412,10 +469,64 @@ export function AdminPage() {
           <p style={{ fontSize: 13, color: colors.textMuted }}>
             ロールは表示用の名前ラベルです（権限は「ユーザー管理」タブでメンバーごとに個別設定します）。
           </p>
-          {/* TODO: 追加・編集・削除をAPIに接続する（現状はダミーデータ表示） */}
-          <ul>
-            {mockRoles.map((r) => (
-              <li key={r.roleId}>{r.name}</li>
+          <form onSubmit={handleAddRole} style={{ display: "flex", gap: 8, maxWidth: 360, marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="ロール名（例：保育士）"
+              value={newRoleName}
+              onChange={(e) => setNewRoleName(e.target.value)}
+              style={{ flex: 1 }}
+              required
+            />
+            <button type="submit" disabled={roleSubmitting}>
+              追加
+            </button>
+          </form>
+          {roleError && <p style={{ color: colors.danger, fontSize: 13 }}>{roleError}</p>}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 360 }}>
+            {roles.map((r) => (
+              <li
+                key={r.roleId}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${colors.surface}` }}
+              >
+                {editingRoleId === r.roleId ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingRoleName}
+                      onChange={(e) => setEditingRoleName(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => handleSaveRoleName(r.roleId)}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => setEditingRoleId(null)}>
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1 }}>{r.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingRoleId(r.roleId);
+                        setEditingRoleName(r.name);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Pencil size={14} /> 改名
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRole(r.roleId)}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Trash2 size={14} /> 削除
+                    </button>
+                  </>
+                )}
+              </li>
             ))}
           </ul>
         </section>
@@ -423,10 +534,64 @@ export function AdminPage() {
       {tab === "memberCategories" && (
         <section>
           <h3>メンバーカテゴリ管理</h3>
-          {/* TODO: 追加・編集・削除をAPIに接続する（現状はダミーデータ表示） */}
-          <ul>
-            {mockMemberCategories.map((c) => (
-              <li key={c.categoryId}>{c.name}</li>
+          <form onSubmit={handleAddCategory} style={{ display: "flex", gap: 8, maxWidth: 360, marginBottom: 12 }}>
+            <input
+              type="text"
+              placeholder="カテゴリ名（例：保育士）"
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              style={{ flex: 1 }}
+              required
+            />
+            <button type="submit" disabled={categorySubmitting}>
+              追加
+            </button>
+          </form>
+          {categoryError && <p style={{ color: colors.danger, fontSize: 13 }}>{categoryError}</p>}
+          <ul style={{ listStyle: "none", padding: 0, maxWidth: 360 }}>
+            {memberCategories.map((c) => (
+              <li
+                key={c.categoryId}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${colors.surface}` }}
+              >
+                {editingCategoryId === c.categoryId ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingCategoryName}
+                      onChange={(e) => setEditingCategoryName(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" onClick={() => handleSaveCategoryName(c.categoryId)}>
+                      保存
+                    </button>
+                    <button type="button" onClick={() => setEditingCategoryId(null)}>
+                      キャンセル
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1 }}>{c.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCategoryId(c.categoryId);
+                        setEditingCategoryName(c.name);
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Pencil size={14} /> 改名
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCategory(c.categoryId)}
+                      style={{ display: "flex", alignItems: "center", gap: 4 }}
+                    >
+                      <Trash2 size={14} /> 削除
+                    </button>
+                  </>
+                )}
+              </li>
             ))}
           </ul>
         </section>

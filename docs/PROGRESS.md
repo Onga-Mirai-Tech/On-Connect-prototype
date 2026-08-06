@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8a完了）
+# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8b完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -21,7 +21,9 @@
 当初計画から大きく発展した内容を整理し、残っている作業をPhase 8〜12として再洗い出しした上で、
 最優先のPhase 8のうち認証基盤部分（8a）を実装した（**Phase 7の技術方針＋Phase 8〜12のロードマップ＋
 Phase 8aの実装計画・決定事項は`/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`
-に記録済み**）。Phase 8aは実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作の
+に記録済み**）。続けてPhase 8bとして、Users/Roles/MemberCategoriesのREST接続をweb/mobile全画面に展開した
+（**実装計画は`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`に記録済み**）。
+Phase 8a・8bともに実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作・API疎通の
 確認はできていない点に注意（8a〜8dが一通り終わった段階でユーザーに確認の上デプロイする既定方針）。
 
 ### 完了したフェーズ
@@ -42,10 +44,13 @@ Phase 8aの実装計画・決定事項は`/Users/ikkounobuyuki/.claude/plans/eff
   build・mobile tscは通過済み。ただし**実際のCognitoにはまだ一度もデプロイしておらず、
   本物のログインの動作確認はできていない**（設計時からの既定方針。8a〜8dが一通り終わった段階で
   改めてユーザーに確認してからデプロイする）。詳細は下記3章30.参照
+- **Phase 8b（Users/Roles/MemberCategoriesのREST接続）**：コード実装完了。web build・mobile tscは
+  通過済み（infra側の変更は無し）。ただし**実際のAPIへの疎通確認はできていない**（デプロイ前のため、
+  未接続時のダミーデータへのフォールバック動作のみ確認）。詳細は下記3章31.参照
 
-### Phase 8b〜12（未着手、優先順に記載。詳細は8章参照）
-- **Phase 8b〜8d: 残りのREST/AppSync接続**（8aで作った認証基盤の上に、Users以外のリソース・
-  チャットのAppSyncを順次接続する）
+### Phase 8c〜12（未着手、優先順に記載。詳細は8章参照）
+- **Phase 8c〜8d: 残りのREST/AppSync接続**（8bで接続したUsers/Roles/MemberCategories以外の
+  リソース・チャットのAppSyncを順次接続する）
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
 - **Phase 10: 予約送信の実スケジューリング**（Phase 8後、既存インフラの実地検証が中心）
 - **Phase 11: Amazon Chime SDK音声通話実装**（Phase 8後、実機検証にAWSデプロイが必要）
@@ -53,9 +58,9 @@ Phase 8aの実装計画・決定事項は`/Users/ikkounobuyuki/.claude/plans/eff
 
 ### 現在のコミット状況
 Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
-Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決定事項の記録＋Phase 8a（3章30.、
-この本ファイルの更新も含む）は**全てコミット済み・未push**（`git log`で確認すること。
-コミットハッシュ`0899faa`まで）。作業ツリーはクリーン（コンテキストリセット直前に確認済み）。
+Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決定事項の記録＋Phase 8a（3章30.）＋
+Phase 8b（3章31.、この本ファイルの更新も含む）は**全てコミット済み・未push**（`git log`で確認すること）。
+作業ツリーはクリーン（コンテキストリセット直前に確認済み）。
 次回セッション開始時も念のため`git status`で確認すること。
 
 ### AWSデプロイの状況
@@ -348,6 +353,41 @@ Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決�
     - **未検証**：実際のCognitoに対するログイン成功/失敗、AdminPageのスタッフ追加・パスワード再発行の
       実地動作、8bで予定しているUsersリソースの本接続。いずれも実デプロイが必要（8a〜8d完了後に
       ユーザーへ確認してから実施する既定方針のまま）
+31. **【Phase 8b】Users/Roles/MemberCategoriesのREST接続をweb/mobile全画面に展開**：
+    `infra/lambda/users/index.ts`が扱う3リソース（Users・Roles・MemberCategories）は元々CRUD API・
+    権限チェックとも実装済みだったが、AdminPageの一部を除きweb/mobileの全画面が
+    `packages/shared/src/mockData.ts`のダミーデータを直接参照していた。本フェーズでこれを解消した
+    （infra側の変更は無し）。
+    - 新規`apps/web/src/api/orgApi.ts`／`apps/mobile/src/api/orgApi.ts`：AdminPage内に閉じていた
+      `authFetch`（Cognito IDトークンを`Authorization`ヘッダーに生の値でセット、`Bearer`接頭辞なし）を
+      共通クライアントとして切り出した。web版はUsers/Roles/MemberCategoriesの全CRUDを持つが、
+      mobile版は管理画面が無い（既存方針）ため読み取り専用（`listUsers`/`listRoles`/`listMemberCategories`のみ）
+    - 新規`apps/web/src/context/OrgDataContext.tsx`／`apps/mobile/src/context/OrgDataContext.tsx`：
+      `NotificationStatusContext.tsx`と同じProvider+フック形式。アプリ起動後にUsers/Roles/
+      MemberCategoriesをまとめて取得し全画面に配る。`API_URL`未設定・取得失敗時はダミーデータに
+      フォールバックする（Phase 8aのAdminPageと同じ方針）。`AuthContext.fetchOwnProfile`
+      （「自分は誰か」の早期解決用、`GET /users/{userId}`単体）とは役割を分け、あえて統合していない
+      （循環依存を避けるため）。`App.tsx`で`AuthProvider`→`OrgDataProvider`→`NotificationStatusProvider`
+      の順に配線
+    - web 9画面・mobile 9画面（メンバー一覧・チャット一覧/詳細/個別メッセージ開始・シフト管理・
+      カレンダー詳細/編集・掲示板詳細/編集）で`mockMembers`/`mockRoles`/`mockMemberCategories`の
+      直接importを`useOrgData()`参照に置き換えた（機械的な一括変更、7章の索引にファイル一覧は載せず
+      パターンのみ記載）。`MemberPicker`（web/mobile共通コンポーネント）はpropsで受け取る設計のため
+      変更不要
+    - `AdminPage.tsx`：独自`authFetch`と`useEffect`でのユーザー一覧取得を廃止し`orgApi`＋
+      `useOrgData()`に統合。ユーザー管理タブの権限チェックボックス（`togglePermission`）を
+      `PUT /users/{userId}`に接続（従来はローカルstateのみのTODOだった）。ロール管理・
+      メンバーカテゴリ管理タブは従来「名前だけの`<ul>`表示」（追加・編集UI自体が無かった）だったが、
+      スタッフ追加フォームと同系統の簡易フォーム（追加・インライン改名・削除）を新設し
+      `orgApi`のCRUDに接続した（実店舗でスタッフ追加時にロール・メンバーカテゴリの実データが
+      無いと選択肢が破綻するため、Users単体でなくこの3リソースを一体で扱う判断）。
+      掲示板カテゴリー・リンク集・カレンダーカテゴリータブは対象外のまま（8c、別リソース）
+    - テスト：infra側の変更が無いため既存101件のテストに影響なし。`npm run build --workspace apps/web`・
+      `npx tsc --noEmit`（mobile）を通過。ブラウザでログイン画面が引き続き正常表示され、
+      コンソールエラーが出ないことを確認済み（Cognito未デプロイのためログイン後の画面群は
+      実地確認できず、型チェック・ビルド通過のみで確認。実デプロイ後に改めて確認する）
+    - **未検証**：実際のAPIに対するUsers/Roles/MemberCategoriesの取得・作成・更新・削除の動作、
+      ログイン後の各画面での実データ表示。実デプロイが必要（8a〜8d完了後にユーザーへ確認してから実施）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -369,7 +409,9 @@ Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決�
   `manageCalendarCategories`/`manageShifts`）。**bulletin/calendar/shiftsのカテゴリー管理系は権限チェック
   済みだが、CalendarEvents本体・BulletinPosts本体には権限チェックが無い**（全メンバーが作成編集削除可、
   設計上の意図的な選択）
-- Web/Mobileの全画面UI（ダミーデータ`packages/shared/src/mockData.ts`で表示。シフト管理・メニュー画面含む）
+- Web/Mobileの全画面UI（シフト管理・メニュー画面含む）。Users/Roles/MemberCategoriesは`orgApi`＋
+  `OrgDataContext`経由で本物のAPIから取得する（Phase 8b、31.参照。未接続時は`mockData.ts`にフォールバック）。
+  それ以外のリソース（チャット・掲示板・カレンダー本体・シフト・リンク集）は引き続きダミーデータ表示
 - 検索・フィルタ・ソート・ヘッダー連携・リアクション・コメント投稿・チャットの`@`メンションなどの
   フロントエンドロジック（いずれもローカルstateで完結。リロードで消える＝バックエンド未接続）
 - チャット新着メッセージのプッシュ通知判定＋SNS発行ロジック（`pushNotification.ts`、27.参照）。
@@ -381,6 +423,8 @@ Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決�
 - Cognito認証（Phase 8a、30.参照）。ログイン・初回パスワード設定・サインアウト、管理者による
   アカウント発行・ログイン状況確認・パスワード再発行。**コードは実装済みだが実際のCognitoに
   デプロイしておらず、本物のログイン成功/失敗の動作確認はまだできていない**
+- Users/Roles/MemberCategoriesのREST接続（Phase 8b、31.参照）。全CRUD（web）・全画面での参照（web/mobile）
+  を実装済み。**コードは実装済みだが実際のAPIへの疎通確認はまだできていない**
 
 ### 未実装（TODOコメントあり、501スタブ等）
 - Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装）
@@ -429,6 +473,8 @@ Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決�
 | Lambda単体テスト（aws-sdk-client-mock使用、101件） | `infra/test/lambda/*.test.ts` |
 | Cognitoアカウント作成・ログイン状況・パスワード再発行ヘルパー | `infra/lambda/common/cognito.ts` |
 | Web/Mobile: 認証状態管理（Amplifyラップ） | `apps/web/src/context/AuthContext.tsx` / `apps/mobile/src/context/AuthContext.tsx` |
+| Web/Mobile: Users/Roles/MemberCategories APIクライアント（Phase 8b） | `apps/web/src/api/orgApi.ts` / `apps/mobile/src/api/orgApi.ts` |
+| Web/Mobile: Users/Roles/MemberCategories一括取得・全画面配布（Phase 8b） | `apps/web/src/context/OrgDataContext.tsx` / `apps/mobile/src/context/OrgDataContext.tsx` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ（4タブ：チャット/掲示板/カレンダー/メニュー） | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: メニュー画面（メンバー/シフト管理/リンク集/個人設定/管理者設定への導線） | `apps/web/src/pages/MenuPage.tsx` |
@@ -461,13 +507,18 @@ Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決�
     置き換えた。AdminPageに管理者によるアカウント発行（Cognitoアカウント作成＋仮パスワード発行）・
     ログイン状況確認・パスワード再発行のUIも実装済み。ただし**実際のCognitoへのデプロイはまだ行っておらず、
     本物のログインの動作確認はできていない**
-  - **8b〜8d（残りのリソース接続）：未着手**。それ以外のCRUD（bulletin/calendar/links/shifts、
-    Usersの残り部分）はREST APIクライアント（CognitoのIDトークンをBearerで送る）に、チャットは
-    AppSyncクライアント（sendMessage/markMessageRead/listMessagesForRoom/Subscription）に接続する
+  - **8b（Users/Roles/MemberCategories接続）：コード実装完了**（詳細は3章31.参照）。
+    `orgApi.ts`＋`OrgDataContext`を新設し、web 9画面・mobile 9画面の`mockMembers`/`mockRoles`/
+    `mockMemberCategories`直接参照を解消。AdminPageのロール・メンバーカテゴリタブに追加・改名・削除UIを
+    新設しAPI接続、ユーザー権限編集もPUT接続した。ただし**実デプロイ前のため実際のAPI疎通確認はできていない**
+  - **8c〜8d（残りのリソース接続）：未着手**。それ以外のCRUD（bulletin/calendar/links/shifts）は
+    REST APIクライアント（8bと同じ`authFetch`パターン）に、チャットはAppSyncクライアント
+    （sendMessage/markMessageRead/listMessagesForRoom/Subscription）に接続する
   `infra/lib/constructs/auth-construct.ts`のCognito設定・`infra/lambda/common/cognito.ts`・
   Web/Mobileの`AuthContext.tsx`は実装済み。詳細は
   `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`の
-  「Phase 8a: 認証基盤 実装計画」参照。
+  「Phase 8a: 認証基盤 実装計画」、および`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`
+  （Phase 8b実装計画）を参照。
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
   掲示板コメント用の新規DynamoDBテーブル・CRUD Lambdaを追加し、ローカルstateのみの
   `toggleReaction`等をAPI接続に置き換える。`bulletin/notifyOnPost.ts`（現状`console.log`のみの

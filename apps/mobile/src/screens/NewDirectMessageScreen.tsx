@@ -2,21 +2,22 @@ import { useState } from "react";
 import { View, TextInput, FlatList, Pressable, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockMembers, mockChatRooms, memberMatchesQuery } from "@on-connect/shared";
+import { mockChatRooms, memberMatchesQuery } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "NewDirectMessage">;
 
 /**
  * 個別メッセージ開始画面（登録メンバーを検索し、1対1チャットを開く窓口）
- * TODO: GET /users でメンバー一覧を取得する（現状はダミーデータ表示）。
  */
 export function NewDirectMessageScreen({ navigation }: Props) {
   const { currentUserId } = useAuth();
+  const { members: allMembers } = useOrgData();
   const [query, setQuery] = useState("");
-  const members = mockMembers.filter((m) => m.userId !== currentUserId);
+  const members = allMembers.filter((m) => m.userId !== currentUserId);
 
   const handleSelect = (userId: string) => {
     const existingRoom = mockChatRooms.find(

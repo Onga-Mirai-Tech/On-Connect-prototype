@@ -7,7 +7,6 @@ import {
   mockBulletinPosts,
   mockBulletinComments,
   mockBulletinCategories,
-  mockMembers,
   toggleReaction,
   type BulletinPost,
   type BulletinComment,
@@ -16,10 +15,10 @@ import type { BulletinStackParamList } from "../navigation/AppNavigator";
 import { ReactionBar } from "../components/ReactionBar";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 type Props = NativeStackScreenProps<BulletinStackParamList, "BulletinDetail">;
 
-const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 const categoryName = (categoryId: string | undefined) =>
   mockBulletinCategories.find((c) => c.categoryId === categoryId)?.name;
 
@@ -29,6 +28,8 @@ const categoryName = (categoryId: string | undefined) =>
  */
 export function BulletinDetailScreen({ route, navigation }: Props) {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
+  const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
   const { postId } = route.params;
   const initialPost = mockBulletinPosts.find((p) => p.postId === postId);
 

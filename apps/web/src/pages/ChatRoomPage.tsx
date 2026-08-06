@@ -1,19 +1,12 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users, AtSign } from "lucide-react";
-import {
-  mockChatRooms,
-  mockMembers,
-  mockMessages,
-  toggleReaction,
-  type Message,
-} from "@on-connect/shared";
+import { mockChatRooms, mockMessages, toggleReaction, type Message } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
 import { useAuth } from "../context/AuthContext";
-
-const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
+import { useOrgData } from "../context/OrgDataContext";
 
 /** 本文末尾の "@検索語" にマッチする（カーソルが末尾にある前提の簡易実装） */
 const mentionPattern = /@([^\s@]*)$/;
@@ -25,10 +18,12 @@ const mentionPattern = /@([^\s@]*)$/;
  */
 export function ChatRoomPage() {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
   const { roomId = "" } = useParams();
+  const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
   const room = mockChatRooms.find((r) => r.roomId === roomId);
   const otherMemberId = room?.memberUserIds.find((id) => id !== currentUserId);
-  const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
+  const otherMember = members.find((m) => m.userId === otherMemberId);
   const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "") : roomId;
   const participantNames = room?.isGroup
     ? room.memberUserIds.map((id) => memberName(id)).join("、")
@@ -40,7 +35,7 @@ export function ChatRoomPage() {
   const [forceNotify, setForceNotify] = useState(false);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
 
-  const roomMembers = mockMembers.filter(
+  const roomMembers = members.filter(
     (m) => room?.memberUserIds.includes(m.userId) && m.userId !== currentUserId,
   );
   const mentionMatch = mentionPattern.exec(body);

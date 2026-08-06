@@ -1,29 +1,24 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, BellOff, MessageCircle, Phone, Search } from "lucide-react";
-import {
-  mockMembers,
-  mockMemberCategories,
-  mockRoles,
-  mockChatRooms,
-  memberMatchesQuery,
-} from "@on-connect/shared";
+import { mockChatRooms, memberMatchesQuery } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 /**
  * メンバー一覧画面（下部タブ）
  * 各メンバーの通知ON/OFF状況を確認でき、その場から個別チャット・音声通話を開始できる。
  * 氏名・ふりがな（ひらがな）検索とロール別グループ表示に対応する。
- * TODO: GET /users からメンバー一覧を取得する（現状はダミーデータ表示）。
  */
 export function MembersPage() {
   const { currentUserId } = useAuth();
+  const { members, roles, memberCategories } = useOrgData();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
 
   const categoryName = (categoryId: string) =>
-    mockMemberCategories.find((c) => c.categoryId === categoryId)?.name ?? "";
+    memberCategories.find((c) => c.categoryId === categoryId)?.name ?? "";
 
   const handleChat = (memberId: string) => {
     // 既存の1対1ルームがあればそれを開き、無ければ仮のルームIDへ遷移する
@@ -38,10 +33,10 @@ export function MembersPage() {
     navigate(`/calls/incoming?name=${encodeURIComponent(memberName)}`);
   };
 
-  const filteredMembers = mockMembers.filter((m) => memberMatchesQuery(m, query));
+  const filteredMembers = members.filter((m) => memberMatchesQuery(m, query));
 
-  // ロール別（mockRolesの定義順）にグループ化して表示する
-  const groups = mockRoles
+  // ロール別（rolesの定義順）にグループ化して表示する
+  const groups = roles
     .map((role) => ({
       role,
       members: filteredMembers.filter((m) => m.roleId === role.roleId),

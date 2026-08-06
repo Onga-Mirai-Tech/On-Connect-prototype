@@ -1,18 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Pencil, Trash2, CalendarPlus } from "lucide-react";
-import {
-  mockCalendarEvents,
-  mockCalendarCategories,
-  mockMembers,
-  buildIcsForEvent,
-} from "@on-connect/shared";
+import { mockCalendarEvents, mockCalendarCategories, buildIcsForEvent } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { useOrgData } from "../context/OrgDataContext";
 
 const categoryName = (categoryId: string | undefined) =>
   mockCalendarCategories.find((c) => c.categoryId === categoryId)?.name;
-const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 
 const formatRange = (startAt: string, endAt: string) => {
   const start = new Date(startAt);
@@ -29,9 +24,11 @@ const formatRange = (startAt: string, endAt: string) => {
  */
 export function CalendarDetailPage() {
   const { currentUserId } = useAuth();
+  const { members } = useOrgData();
   const { eventId = "" } = useParams();
   const navigate = useNavigate();
   const [event] = useState(() => mockCalendarEvents.find((e) => e.eventId === eventId));
+  const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
 
   if (!event) {
     return <p>予定が見つかりません。</p>;
