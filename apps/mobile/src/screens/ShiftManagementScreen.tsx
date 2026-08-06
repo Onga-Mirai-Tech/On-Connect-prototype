@@ -6,6 +6,7 @@ import {
   mockDailyNotes,
   weekdayLabelForDate,
   holidayNameForDate,
+  mapWithConcurrency,
   type DutyType,
   type ShiftType,
   type MemberDailyStatus,
@@ -65,10 +66,12 @@ export function ShiftManagementScreen() {
   const days = Array.from({ length: dayCount }, (_, i) => i + 1);
   const monthDates = days.map((d) => dateKey(year, month, d));
 
+  // 日付ごとにAPIを叩く方式（バックエンドが範囲取得未対応のため）。月次で最大31件×2種類を
+  // 一度に投げるとAWSアカウントのLambda同時実行数上限に達し500エラーになるため、同時実行数を制限する
   const refetchMonth = async (dates: string[]) => {
     try {
-      const statusLists = await Promise.all(dates.map((date) => orgApi.listMemberDailyStatusesForDate(date)));
-      const noteList = await Promise.all(dates.map((date) => orgApi.getDailyNote(date)));
+      const statusLists = await mapWithConcurrency(dates, 5, (date) => orgApi.listMemberDailyStatusesForDate(date));
+      const noteList = await mapWithConcurrency(dates, 5, (date) => orgApi.getDailyNote(date));
       setStatuses(statusLists.flat());
       setNotes(noteList.filter((n) => n.note));
     } catch {

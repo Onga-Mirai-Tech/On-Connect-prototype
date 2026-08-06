@@ -564,6 +564,53 @@ Phase 8b（3章31.）＋Phase 8c（3章32.）＋Phase 8d（3章33.）は**コミ
       未確認）、モバイル（Expo）での実機確認
     - テスト：修正後`npm test --workspace infra`（101件）・`cdk synth`・
       `npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）で確認
+35. **【残りのREST接続実地検証＋バグ2件発見・修正】**：34.で未確認のまま残っていた
+    掲示板・カレンダー・シフト・リンク集のREST接続と、チャットの既読（`markMessageRead`）を
+    実際のAPIで検証した。検証中に新たなバグを2件発見・修正した。
+    - **バグ③新規作成フォームのカテゴリー初期値がモックIDに固定される**：`BulletinEditPage.tsx`・
+      `CalendarEventEditPage.tsx`（web）で、新規作成時のデフォルトカテゴリーを
+      `useEffect(() => { setCategoryId(bulletinCategories[0]?.categoryId ?? ""); }, [postId])`
+      のように`postId`のみに依存する形で設定していたため、マウント直後（`OrgDataContext`が
+      ローディング中のモックフォールバック値をまだ返している瞬間）の値で固定されてしまい、
+      実データ取得完了後も更新されなかった。結果、表示上は実カテゴリー名（たまたま同名）が
+      選択されているように見えても、実際に送信されるcategoryIdはモックのID
+      （例：`bc-announcement`）のままで、DynamoDBに存在しないカテゴリーIDが保存されていた。
+      `OrgDataContext`に既にあった`isLoading`フラグを使い、取得試行完了（成功/フォールバック
+      いずれか確定）後にのみデフォルト値を設定するよう修正（`useOrgData()`の`bulletinCategories`
+      等は「未ロード時はモックで初期化される」設計のため、配列の中身だけでは実データか
+      判定できない点に注意。mobile版の`BulletinEditScreen.tsx`・`CalendarEventEditScreen.tsx`は
+      同じ値を`useState`にキャッシュせず保存時に`bulletinCategories`を都度参照する実装だった
+      ため、この不具合は無く修正不要だった）
+    - **バグ④シフト管理画面の月間一括取得がAWSアカウントのLambda同時実行数上限に達し500エラー**：
+      `ShiftManagementPage`/`Screen`の`refetchMonth`が`Promise.all`で最大31日×2種類=62件を
+      一度に並列リクエストしており、このAWSアカウントのLambda同時実行数上限が**10**
+      （`aws lambda get-account-settings`で確認。標準は1000だがこのアカウントは10のまま）
+      だったため、大半が`API Gatewayの{"message": "Internal server error"}`
+      （Lambda呼び出し自体のスロットリングによる汎用500、アプリのエラーハンドラが返す
+      `{"message": "内部エラーが発生しました"}`とは別物）で失敗し、該当日のデータが
+      ダミーデータにフォールバックしていた（`curl`で1件ずつ順次確認すると全て200で成功する
+      ため、単体テストでは気づけない類のバグ）。31件のcurl並列実行で再現确認。
+      **対処1（AWS側）**：Service Quotas経由でLambda同時実行数の引き上げを1000へ申請済み
+      （`aws service-quotas request-service-quota-increase`、本ファイル執筆時点`CASE_OPENED`
+      で未承認）。**対処2（コード側）**：`packages/shared/src/concurrency.ts`に
+      `mapWithConcurrency`（同時実行数を指定して配列を処理する汎用ヘルパー）を新設し、
+      `ShiftManagementPage`/`Screen`の日別fetch（同時実行数5）と、`OrgDataContext`
+      （web/mobile）の起動時8件一括取得（同時実行数4、こちらも同じ上限に抵触し得るため
+      合わせて対処）に適用。Quota引き上げが未承認の状態でも、この2箇所を合計9同時実行以下に
+      抑えることで500エラーが発生しないことを確認済み
+    - **確認済み**：掲示板（カテゴリー作成・投稿作成・一覧/詳細表示）、カレンダー
+      （カテゴリー作成・予定作成・月表示への反映）、シフト管理（当番種別・シフト種別の作成、
+      `member-daily-status`のGET/PUT/DELETE、実データでのグリッド表示）、リンク集
+      （作成・一覧表示）、チャットの既読（`markMessageRead`呼び出し後に`readByUserIds`へ
+      実際に自分のuserIdが追加されることをDynamoDBで確認）。検証用に作成したテストデータ
+      （2人目のテストユーザー・テストチャットルーム等）は確認後に削除済み。一部
+      （掲示板投稿1件・カレンダーカテゴリー/予定各1件・リンク1件・当番種別/シフト種別各1件）は
+      動作確認の実データとしてそのまま残している
+    - **未確認のまま残っているもの**：モバイル（Expo）のシミュレータ実機確認
+      （このMacにフルのXcodeが入っておらず`npx expo start --ios`が失敗するため未実施。
+      ユーザーにXcodeインストール＋`sudo xcode-select`実行を依頼済み、次回セッションで再開）
+    - テスト：`npm test --workspace infra`（101件）・`npm run build --workspace apps/web`・
+      `npx tsc --noEmit`（mobile）で確認
 
 ## 4. 現在のダミー登録ユーザーの設定
 

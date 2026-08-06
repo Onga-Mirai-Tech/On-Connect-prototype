@@ -12,7 +12,7 @@ import { colors } from "../theme/colors";
 export function CalendarEventEditPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
-  const { memberCategories, calendarCategories } = useOrgData();
+  const { memberCategories, calendarCategories, isLoading } = useOrgData();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -23,11 +23,15 @@ export function CalendarEventEditPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // 新規作成時のデフォルトカテゴリー：OrgDataContextの初期値はローディング中のモックフォールバックのため
+  // calendarCategoriesの中身だけでは実データか判定できない。isLoadingがfalseになる（取得試行完了）まで待つ
   useEffect(() => {
-    if (!eventId) {
-      setCategoryId(calendarCategories[0]?.categoryId ?? "");
-      return;
-    }
+    if (eventId || categoryId || isLoading) return;
+    setCategoryId(calendarCategories[0]?.categoryId ?? "");
+  }, [eventId, categoryId, isLoading, calendarCategories]);
+
+  useEffect(() => {
+    if (!eventId) return;
     (async () => {
       let event;
       try {
@@ -39,9 +43,8 @@ export function CalendarEventEditPage() {
       setDescription(event?.description ?? "");
       setStartAt(event?.startAt.slice(0, 16) ?? "");
       setEndAt(event?.endAt.slice(0, 16) ?? "");
-      setCategoryId(event?.categoryId ?? calendarCategories[0]?.categoryId ?? "");
+      setCategoryId(event?.categoryId ?? "");
       setVisibleCategoryIds(event?.visibleCategoryIds ?? []);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     })();
   }, [eventId]);
 

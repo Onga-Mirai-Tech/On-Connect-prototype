@@ -8,6 +8,7 @@ import {
   mockCalendarCategories,
   mockDutyTypes,
   mockShiftTypes,
+  mapWithConcurrency,
   type BulletinCategory,
   type CalendarCategory,
   type DutyType,
@@ -61,37 +62,34 @@ export function OrgDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       setIsLoading(true);
-      await Promise.all([
-        refetchMembers(),
-        orgApi
-          .listRoles()
-          .then(setRoles)
-          .catch(() => setRoles(mockRoles)),
-        orgApi
-          .listMemberCategories()
-          .then(setMemberCategories)
-          .catch(() => setMemberCategories(mockMemberCategories)),
-        orgApi
-          .listOrgLinks()
-          .then(setOrgLinks)
-          .catch(() => setOrgLinks(mockOrgLinks)),
-        orgApi
-          .listBulletinCategories()
-          .then(setBulletinCategories)
-          .catch(() => setBulletinCategories(mockBulletinCategories)),
-        orgApi
-          .listCalendarCategories()
-          .then(setCalendarCategories)
-          .catch(() => setCalendarCategories(mockCalendarCategories)),
-        orgApi
-          .listDutyTypes()
-          .then(setDutyTypes)
-          .catch(() => setDutyTypes(mockDutyTypes)),
-        orgApi
-          .listShiftTypes()
-          .then(setShiftTypes)
-          .catch(() => setShiftTypes(mockShiftTypes)),
-      ]);
+      // 8件を一斉にPromise.allで投げるとAWSアカウントのLambda同時実行数上限に達し
+      // 500エラーになることがあるため、同時実行数を制限する（他画面の並列fetchとも合算されるため控えめに）
+      await mapWithConcurrency(
+        [
+          refetchMembers,
+          () => orgApi.listRoles().then(setRoles).catch(() => setRoles(mockRoles)),
+          () =>
+            orgApi
+              .listMemberCategories()
+              .then(setMemberCategories)
+              .catch(() => setMemberCategories(mockMemberCategories)),
+          () => orgApi.listOrgLinks().then(setOrgLinks).catch(() => setOrgLinks(mockOrgLinks)),
+          () =>
+            orgApi
+              .listBulletinCategories()
+              .then(setBulletinCategories)
+              .catch(() => setBulletinCategories(mockBulletinCategories)),
+          () =>
+            orgApi
+              .listCalendarCategories()
+              .then(setCalendarCategories)
+              .catch(() => setCalendarCategories(mockCalendarCategories)),
+          () => orgApi.listDutyTypes().then(setDutyTypes).catch(() => setDutyTypes(mockDutyTypes)),
+          () => orgApi.listShiftTypes().then(setShiftTypes).catch(() => setShiftTypes(mockShiftTypes)),
+        ],
+        4,
+        (fn) => fn(),
+      );
       setIsLoading(false);
     })();
   }, [refetchMembers]);

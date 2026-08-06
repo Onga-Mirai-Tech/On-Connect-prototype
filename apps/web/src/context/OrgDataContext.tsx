@@ -8,6 +8,7 @@ import {
   mockCalendarCategories,
   mockDutyTypes,
   mockShiftTypes,
+  mapWithConcurrency,
   type BulletinCategory,
   type CalendarCategory,
   type DutyType,
@@ -126,16 +127,22 @@ export function OrgDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       setIsLoading(true);
-      await Promise.all([
-        refetchMembers(),
-        refetchRoles(),
-        refetchMemberCategories(),
-        refetchOrgLinks(),
-        refetchBulletinCategories(),
-        refetchCalendarCategories(),
-        refetchDutyTypes(),
-        refetchShiftTypes(),
-      ]);
+      // 8件を一斉にPromise.allで投げるとAWSアカウントのLambda同時実行数上限に達し
+      // 500エラーになることがあるため、同時実行数を制限する（他ページの並列fetchとも合算されるため控えめに）
+      await mapWithConcurrency(
+        [
+          refetchMembers,
+          refetchRoles,
+          refetchMemberCategories,
+          refetchOrgLinks,
+          refetchBulletinCategories,
+          refetchCalendarCategories,
+          refetchDutyTypes,
+          refetchShiftTypes,
+        ],
+        4,
+        (refetch) => refetch(),
+      );
       setIsLoading(false);
     })();
   }, [

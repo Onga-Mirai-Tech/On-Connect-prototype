@@ -14,7 +14,7 @@ import { colors } from "../theme/colors";
 export function BulletinEditPage() {
   const { postId } = useParams();
   const navigate = useNavigate();
-  const { memberCategories, bulletinCategories } = useOrgData();
+  const { memberCategories, bulletinCategories, isLoading } = useOrgData();
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -23,26 +23,29 @@ export function BulletinEditPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // 新規作成時のデフォルトカテゴリー：OrgDataContextの初期値はローディング中のモックフォールバックのため
+  // bulletinCategoriesの中身だけでは実データか判定できない。isLoadingがfalseになる（取得試行完了）まで待つ
   useEffect(() => {
-    if (!postId) {
-      setCategoryId(bulletinCategories[0]?.categoryId ?? "");
-      return;
-    }
+    if (postId || categoryId || isLoading) return;
+    setCategoryId(bulletinCategories[0]?.categoryId ?? "");
+  }, [postId, categoryId, isLoading, bulletinCategories]);
+
+  useEffect(() => {
+    if (!postId) return;
     (async () => {
       try {
         const post = await orgApi.getBulletinPost(postId);
         setTitle(post.title);
         setBody(post.body);
-        setCategoryId(post.categoryId ?? bulletinCategories[0]?.categoryId ?? "");
+        setCategoryId(post.categoryId ?? "");
         setVisibleCategoryIds(post.visibleCategoryIds);
       } catch {
         const post = mockBulletinPosts.find((p) => p.postId === postId);
         setTitle(post?.title ?? "");
         setBody(post?.body ?? "");
-        setCategoryId(post?.categoryId ?? bulletinCategories[0]?.categoryId ?? "");
+        setCategoryId(post?.categoryId ?? "");
         setVisibleCategoryIds(post?.visibleCategoryIds ?? []);
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     })();
   }, [postId]);
 
