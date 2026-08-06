@@ -3,6 +3,8 @@ import * as path from "path";
 import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
 
 export interface ChatConstructProps {
   envName: string;
@@ -162,6 +164,23 @@ export class ChatConstruct extends Construct {
   }
 }`),
       responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
+    });
+
+    // 絵文字リアクションのトグル（Phase 9）。read-modify-writeが必要なためLambda裏付けリゾルバにする
+    // （このプロジェクト初のLambdaデータソース、他は全てVTL＋DynamoDBデータソース）
+    const toggleReactionFn = new lambdaNode.NodejsFunction(this, "ToggleMessageReactionFn", {
+      entry: path.join(__dirname, "../../lambda/messages/toggleReaction.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      environment: { MESSAGES_TABLE_NAME: props.messagesTable.tableName },
+    });
+    props.messagesTable.grantReadWriteData(toggleReactionFn);
+    const toggleReactionDS = this.api.addLambdaDataSource("ToggleReactionDataSource", toggleReactionFn);
+    toggleReactionDS.createResolver("ToggleMessageReactionResolver", {
+      typeName: "Mutation",
+      fieldName: "toggleMessageReaction",
+      requestMappingTemplate: appsync.MappingTemplate.lambdaRequest(),
+      responseMappingTemplate: appsync.MappingTemplate.lambdaResult(),
     });
 
     // 予約送信の取消（削除）。削除イベントは Streams 経由で EventBridge Schedule も併せて削除する

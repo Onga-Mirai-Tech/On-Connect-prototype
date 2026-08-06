@@ -1,11 +1,20 @@
 process.env.BULLETIN_POSTS_TABLE_NAME = "test-BulletinPosts";
 process.env.BULLETIN_CATEGORIES_TABLE_NAME = "test-BulletinCategories";
+process.env.BULLETIN_COMMENTS_TABLE_NAME = "test-BulletinComments";
 process.env.USERS_TABLE_NAME = "test-Users";
 
 import { mockClient } from "aws-sdk-client-mock";
-import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DeleteCommand,
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  ScanCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import type { BulletinCategory, BulletinPost, RolePermissions, User } from "@on-connect/shared";
+import type { BulletinCategory, BulletinComment, BulletinPost, RolePermissions, User } from "@on-connect/shared";
 import { handler } from "../../lambda/bulletin/crud";
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
@@ -270,5 +279,148 @@ describe("BulletinCategories CRUD", () => {
     );
 
     expect(res.statusCode).toBe(409);
+  });
+});
+
+describe("BulletinComments（Phase 9）", () => {
+  const visiblePost: BulletinPost = {
+    postId: "p1",
+    title: "全体公開のお知らせ",
+    body: "<p>本文</p>",
+    authorId: "author-1",
+    visibleCategoryIds: [],
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+  };
+  const hiddenPost: BulletinPost = { ...visiblePost, postId: "p3", visibleCategoryIds: ["cat-fulltime"] };
+
+  test("GET /bulletin-posts/{postId}/comments は閲覧権限が無ければ403", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p3" } }).resolves({ Item: hiddenPost });
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}/comments",
+        httpMethod: "GET",
+        pathParameters: { postId: "p3" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  test("GET /bulletin-posts/{postId}/comments は作成日時の昇順で返す", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({ Item: visiblePost });
+    ddbMock.on(QueryCommand, { TableName: "test-BulletinComments" }).resolves({
+      Items: [
+        { commentId: "c2", postId: "p1", authorId: "u2", body: "2番目", createdAt: "2026-08-02T00:00:00.000Z" },
+        { commentId: "c1", postId: "p1", authorId: "u1", body: "1番目", createdAt: "2026-08-01T00:00:00.000Z" },
+      ],
+    });
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}/comments",
+        httpMethod: "GET",
+        pathParameters: { postId: "p1" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as BulletinComment[];
+    expect(body.map((c) => c.commentId)).toEqual(["c1", "c2"]);
+  });
+
+  test("POST /bulletin-posts/{postId}/comments でコメントを作成できる", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({ Item: visiblePost });
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}/comments",
+        httpMethod: "POST",
+        pathParameters: { postId: "p1" },
+        body: JSON.stringify({ body: "コメント本文" }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(201);
+    const body = JSON.parse(res.body) as BulletinComment;
+    expect(body.body).toBe("コメント本文");
+    expect(body.authorId).toBe("caller-1");
+    expect(body.postId).toBe("p1");
+    expect(typeof body.commentId).toBe("string");
+  });
+
+  test("POST /bulletin-posts/{postId}/comments はbody不足で400", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({ Item: visiblePost });
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}/comments",
+        httpMethod: "POST",
+        pathParameters: { postId: "p1" },
+        body: JSON.stringify({}),
+      }),
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("BulletinPost reactions（Phase 9）", () => {
+  test("PUT /bulletin-posts/{postId}/reactions でリアクションをトグルできる（updatedAtは変更しない）", async () => {
+    const post: BulletinPost = {
+      postId: "p1",
+      title: "全体公開のお知らせ",
+      body: "<p>本文</p>",
+      authorId: "author-1",
+      visibleCategoryIds: [],
+      reactions: [],
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({ Item: post });
+    ddbMock.on(UpdateCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}/reactions",
+        httpMethod: "PUT",
+        pathParameters: { postId: "p1" },
+        body: JSON.stringify({ emoji: "👍" }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as BulletinPost;
+    expect(body.reactions).toEqual([{ emoji: "👍", userIds: ["caller-1"] }]);
+    expect(body.updatedAt).toBe(post.updatedAt);
+
+    const updateCalls = ddbMock.commandCalls(UpdateCommand);
+    expect(updateCalls[0].args[0].input.UpdateExpression).toBe("SET reactions = :reactions");
+  });
+
+  test("PUT /bulletin-posts/{postId}/reactions は閲覧権限が無ければ403", async () => {
+    const hiddenPost: BulletinPost = {
+      postId: "p3",
+      title: "正職員向け",
+      body: "<p>本文</p>",
+      authorId: "author-1",
+      visibleCategoryIds: ["cat-fulltime"],
+      createdAt: "2026-08-03T00:00:00.000Z",
+      updatedAt: "2026-08-03T00:00:00.000Z",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p3" } }).resolves({ Item: hiddenPost });
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}/reactions",
+        httpMethod: "PUT",
+        pathParameters: { postId: "p3" },
+        body: JSON.stringify({ emoji: "👍" }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(403);
   });
 });

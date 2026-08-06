@@ -1,6 +1,7 @@
 import { fetchAuthSession } from "aws-amplify/auth";
 import type {
   BulletinCategory,
+  BulletinComment,
   BulletinPost,
   CalendarCategory,
   CalendarEvent,
@@ -106,6 +107,17 @@ export const orgApi = {
   updateBulletinPost: (postId: string, partial: Partial<BulletinPost>) =>
     authFetchJson<BulletinPost>(`/bulletin-posts/${postId}`, { method: "PUT", body: JSON.stringify(partial) }),
   deleteBulletinPost: (postId: string) => authFetchJson<void>(`/bulletin-posts/${postId}`, { method: "DELETE" }),
+  listBulletinComments: (postId: string) => authFetchJson<BulletinComment[]>(`/bulletin-posts/${postId}/comments`),
+  createBulletinComment: (postId: string, body: string) =>
+    authFetchJson<BulletinComment>(`/bulletin-posts/${postId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    }),
+  toggleBulletinPostReaction: (postId: string, emoji: string) =>
+    authFetchJson<BulletinPost>(`/bulletin-posts/${postId}/reactions`, {
+      method: "PUT",
+      body: JSON.stringify({ emoji }),
+    }),
 
   listCalendarCategories: () => authFetchJson<CalendarCategory[]>("/calendar-categories"),
   createCalendarCategory: (name: string) =>

@@ -14,6 +14,7 @@ export class DatabaseConstruct extends Construct {
   public readonly messagesTable: dynamodb.Table;
   public readonly bulletinPostsTable: dynamodb.Table;
   public readonly bulletinCategoriesTable: dynamodb.Table;
+  public readonly bulletinCommentsTable: dynamodb.Table;
   public readonly calendarEventsTable: dynamodb.Table;
   public readonly calendarCategoriesTable: dynamodb.Table;
   public readonly callLogsTable: dynamodb.Table;
@@ -79,6 +80,14 @@ export class DatabaseConstruct extends Construct {
       ...commonProps,
       tableName: `on-connect-${envName}-BulletinCategories`,
       partitionKey: { name: "categoryId", type: dynamodb.AttributeType.STRING },
+    });
+
+    // 掲示板投稿へのコメント（Phase 9）。PK=postIdで「その投稿の全コメント」を1クエリで引ける
+    this.bulletinCommentsTable = new dynamodb.Table(this, "BulletinCommentsTable", {
+      ...commonProps,
+      tableName: `on-connect-${envName}-BulletinComments`,
+      partitionKey: { name: "postId", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "commentId", type: dynamodb.AttributeType.STRING },
     });
 
     // 独立DB管理の共有カレンダー（Googleカレンダーとは同期しない、全メンバーが編集可）

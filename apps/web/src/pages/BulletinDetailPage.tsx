@@ -16,7 +16,8 @@ import { orgApi } from "../api/orgApi";
 
 /**
  * 掲示板詳細画面：タイトル・本文（HTML表示）・リアクション・コメントを表示する。
- * Phase 8c：投稿本体をAPIに接続。コメント・リアクションは対象外（バックエンドAPI自体が未実装、Phase 9で対応）
+ * Phase 8c：投稿本体をAPIに接続。Phase 9：コメント・リアクションもAPIに接続（失敗時はローカルstateに
+ * フォールバック、他の画面と同じ方針）。
  */
 export function BulletinDetailPage() {
   const { currentUserId } = useAuth();
@@ -28,9 +29,7 @@ export function BulletinDetailPage() {
 
   const [post, setPost] = useState<BulletinPost | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
-  const [comments, setComments] = useState<BulletinComment[]>(
-    mockBulletinComments.filter((c) => c.postId === postId),
-  );
+  const [comments, setComments] = useState<BulletinComment[]>([]);
   const [commentBody, setCommentBody] = useState("");
 
   useEffect(() => {
@@ -43,6 +42,11 @@ export function BulletinDetailPage() {
       } finally {
         setIsLoading(false);
       }
+      try {
+        setComments(await orgApi.listBulletinComments(postId));
+      } catch {
+        setComments(mockBulletinComments.filter((c) => c.postId === postId));
+      }
     })();
   }, [postId]);
 
@@ -54,25 +58,32 @@ export function BulletinDetailPage() {
     return <p>投稿が見つかりません。</p>;
   }
 
-  const handleToggleReaction = (emoji: string) => {
-    // TODO: 掲示板リアクションAPIに接続する
-    setPost((prev) => (prev ? { ...prev, reactions: toggleReaction(prev.reactions, emoji, currentUserId ?? "") } : prev));
+  const handleToggleReaction = async (emoji: string) => {
+    try {
+      setPost(await orgApi.toggleBulletinPostReaction(postId, emoji));
+    } catch {
+      setPost((prev) => (prev ? { ...prev, reactions: toggleReaction(prev.reactions, emoji, currentUserId ?? "") } : prev));
+    }
   };
 
-  const handleAddComment = (e: React.FormEvent) => {
+  const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentBody.trim()) return;
-    // TODO: コメント投稿APIに接続する
-    setComments((prev) => [
-      ...prev,
-      {
-        commentId: `local-${Date.now()}`,
-        postId,
-        authorId: currentUserId ?? "",
-        body: commentBody,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    try {
+      const created = await orgApi.createBulletinComment(postId, commentBody);
+      setComments((prev) => [...prev, created]);
+    } catch {
+      setComments((prev) => [
+        ...prev,
+        {
+          commentId: `local-${Date.now()}`,
+          postId,
+          authorId: currentUserId ?? "",
+          body: commentBody,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    }
     setCommentBody("");
   };
 

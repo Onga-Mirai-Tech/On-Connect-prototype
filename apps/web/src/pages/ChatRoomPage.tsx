@@ -25,7 +25,7 @@ function upsertMessage(messages: Message[], incoming: Message): Message[] {
  * チャット詳細画面（7章 3番）
  * メッセージ作成時に予約送信・緊急通知オプション、1対1トークには発信ボタンを表示（5.2.2〜5.2.4）
  * Phase 8d：AppSyncのクエリ・ミューテーション・サブスクリプションに接続（失敗時はダミーデータに
- * フォールバック）。リアクションはスキーマ未対応のためローカルstateのまま（Phase 9で対応）。
+ * フォールバック）。Phase 9：リアクションもAPIに接続。
  */
 export function ChatRoomPage() {
   const { currentUserId } = useAuth();
@@ -62,10 +62,14 @@ export function ChatRoomPage() {
     const unsubscribeRead = chatClient.subscribeToReads(roomId, (message) => {
       setMessages((prev) => upsertMessage(prev, message));
     });
+    const unsubscribeReactions = chatClient.subscribeToReactions(roomId, (message) => {
+      setMessages((prev) => upsertMessage(prev, message));
+    });
     markingReadRef.current = new Set();
     return () => {
       unsubscribeSent();
       unsubscribeRead();
+      unsubscribeReactions();
     };
   }, [roomId]);
 
@@ -142,13 +146,22 @@ export function ChatRoomPage() {
     // TODO: POST /calls を呼び出し、Chime SDK Meeting/Attendee を取得して発信画面へ遷移する
   };
 
-  const handleToggleReaction = (messageId: string, emoji: string) => {
-    // TODO: リアクション永続化はPhase 9対応（スキーマにフィールドが無い）
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, currentUserId ?? "") } : m,
-      ),
-    );
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    try {
+      const updated = await chatClient.toggleMessageReaction({
+        roomId,
+        messageId,
+        emoji,
+        userId: currentUserId ?? "",
+      });
+      setMessages((prev) => upsertMessage(prev, updated));
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, currentUserId ?? "") } : m,
+        ),
+      );
+    }
   };
 
   return (

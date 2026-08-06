@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
-import { DeleteCommand, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import type { BulletinCategory, BulletinPost, User } from "@on-connect/shared";
+import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import type { BulletinCategory, BulletinComment, BulletinPost, User } from "@on-connect/shared";
+import { toggleReaction } from "@on-connect/shared";
 import { requirePermission } from "../common/authz";
 import { docClient, isTableEmpty } from "../common/dynamo";
 import {
@@ -16,6 +17,7 @@ import { isVisibleToCategory } from "../common/visibility";
 
 const BULLETIN_POSTS_TABLE_NAME = process.env.BULLETIN_POSTS_TABLE_NAME!;
 const BULLETIN_CATEGORIES_TABLE_NAME = process.env.BULLETIN_CATEGORIES_TABLE_NAME!;
+const BULLETIN_COMMENTS_TABLE_NAME = process.env.BULLETIN_COMMENTS_TABLE_NAME!;
 const USERS_TABLE_NAME = process.env.USERS_TABLE_NAME!;
 
 /**
@@ -35,6 +37,15 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       if (httpMethod === "GET") return getPost(postId, event);
       if (httpMethod === "PUT") return updatePost(postId, event);
       if (httpMethod === "DELETE") return deletePost(postId);
+    }
+    if (resource === "/bulletin-posts/{postId}/comments") {
+      const postId = requireParam(event, "postId");
+      if (httpMethod === "GET") return listComments(postId, event);
+      if (httpMethod === "POST") return createComment(postId, event);
+    }
+    if (resource === "/bulletin-posts/{postId}/reactions") {
+      const postId = requireParam(event, "postId");
+      if (httpMethod === "PUT") return toggleBulletinReaction(postId, event);
     }
     if (resource === "/bulletin-categories") {
       if (httpMethod === "GET") return listCategories();
@@ -124,6 +135,87 @@ async function deletePost(postId: string) {
 async function fetchPost(postId: string): Promise<BulletinPost | undefined> {
   const result = await docClient.send(new GetCommand({ TableName: BULLETIN_POSTS_TABLE_NAME, Key: { postId } }));
   return result.Item as BulletinPost | undefined;
+}
+
+/** 投稿の閲覧権限が無ければ403にする（コメント一覧・投稿・リアクションで共通利用） */
+async function requirePostVisible(post: BulletinPost, event: APIGatewayProxyEvent): Promise<void> {
+  const memberCategoryId = await currentUserMemberCategoryId(event);
+  if (!isVisibleToCategory(post.visibleCategoryIds, memberCategoryId)) {
+    throw new HttpError(403, "この投稿を閲覧する権限がありません");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// BulletinComments（Phase 9、削除・編集は未対応。投稿の閲覧権限=isVisibleToCategoryで保護）
+// ---------------------------------------------------------------------------
+
+async function listComments(postId: string, event: APIGatewayProxyEvent) {
+  const post = await fetchPost(postId);
+  if (!post) throw new HttpError(404, "投稿が見つかりません");
+  await requirePostVisible(post, event);
+
+  const result = await docClient.send(
+    new QueryCommand({
+      TableName: BULLETIN_COMMENTS_TABLE_NAME,
+      KeyConditionExpression: "postId = :postId",
+      ExpressionAttributeValues: { ":postId": postId },
+    }),
+  );
+  const comments = ((result.Items as BulletinComment[] | undefined) ?? []).sort((a, b) =>
+    a.createdAt.localeCompare(b.createdAt),
+  );
+  return jsonResponse(200, comments);
+}
+
+async function createComment(postId: string, event: APIGatewayProxyEvent) {
+  const authorId = getCurrentUserId(event);
+  const post = await fetchPost(postId);
+  if (!post) throw new HttpError(404, "投稿が見つかりません");
+  await requirePostVisible(post, event);
+
+  const input = parseJsonBody<{ body?: string }>(event);
+  if (!input.body) throw new HttpError(400, "body は必須です");
+
+  const comment: BulletinComment = {
+    commentId: randomUUID(),
+    postId,
+    authorId,
+    body: input.body,
+    createdAt: new Date().toISOString(),
+  };
+  await docClient.send(new PutCommand({ TableName: BULLETIN_COMMENTS_TABLE_NAME, Item: comment }));
+  return jsonResponse(201, comment);
+}
+
+// ---------------------------------------------------------------------------
+// BulletinPostのリアクション（Phase 9）
+// ---------------------------------------------------------------------------
+
+/**
+ * reactions属性だけを更新し、updatedAtには触れない。
+ * updatedAtまで更新すると、リアクションを押すたびに notifyOnPost.ts が「投稿が更新された」と
+ * みなして全閲覧対象者に通知を送ってしまうため、意図的にPUT /bulletin-posts/{postId}とは
+ * 別の更新経路にしている。
+ */
+async function toggleBulletinReaction(postId: string, event: APIGatewayProxyEvent) {
+  const userId = getCurrentUserId(event);
+  const post = await fetchPost(postId);
+  if (!post) throw new HttpError(404, "投稿が見つかりません");
+  await requirePostVisible(post, event);
+
+  const input = parseJsonBody<{ emoji?: string }>(event);
+  if (!input.emoji) throw new HttpError(400, "emoji は必須です");
+
+  const reactions = toggleReaction(post.reactions, input.emoji, userId);
+  await docClient.send(
+    new UpdateCommand({
+      TableName: BULLETIN_POSTS_TABLE_NAME,
+      Key: { postId },
+      UpdateExpression: "SET reactions = :reactions",
+      ExpressionAttributeValues: { ":reactions": reactions },
+    }),
+  );
+  return jsonResponse(200, { ...post, reactions });
 }
 
 async function currentUserMemberCategoryId(event: APIGatewayProxyEvent): Promise<string> {

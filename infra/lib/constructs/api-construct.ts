@@ -16,6 +16,7 @@ export interface ApiConstructProps {
   memberCategoriesTable: dynamodb.Table;
   bulletinPostsTable: dynamodb.Table;
   bulletinCategoriesTable: dynamodb.Table;
+  bulletinCommentsTable: dynamodb.Table;
   calendarEventsTable: dynamodb.Table;
   calendarCategoriesTable: dynamodb.Table;
   orgLinksTable: dynamodb.Table;
@@ -131,6 +132,7 @@ export class ApiConstruct extends Construct {
       environment: {
         BULLETIN_POSTS_TABLE_NAME: props.bulletinPostsTable.tableName,
         BULLETIN_CATEGORIES_TABLE_NAME: props.bulletinCategoriesTable.tableName,
+        BULLETIN_COMMENTS_TABLE_NAME: props.bulletinCommentsTable.tableName,
         ATTACHMENTS_BUCKET_NAME: props.attachmentsBucket.bucketName,
         // 閲覧者のmemberCategoryIdを引くために参照する（visibleCategoryIdsフィルタ、5.3.3）
         USERS_TABLE_NAME: props.usersTable.tableName,
@@ -138,6 +140,7 @@ export class ApiConstruct extends Construct {
     });
     props.bulletinPostsTable.grantReadWriteData(bulletinFn);
     props.bulletinCategoriesTable.grantReadWriteData(bulletinFn);
+    props.bulletinCommentsTable.grantReadWriteData(bulletinFn);
     props.attachmentsBucket.grantReadWrite(bulletinFn);
     props.usersTable.grantReadData(bulletinFn);
 
@@ -148,6 +151,13 @@ export class ApiConstruct extends Construct {
     bulletinItem.addMethod("GET", new apigateway.LambdaIntegration(bulletinFn), authOptions);
     bulletinItem.addMethod("PUT", new apigateway.LambdaIntegration(bulletinFn), authOptions);
     bulletinItem.addMethod("DELETE", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+    // コメント（Phase 9、削除・編集は未対応）
+    const bulletinCommentsResource = bulletinItem.addResource("comments");
+    bulletinCommentsResource.addMethod("GET", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+    bulletinCommentsResource.addMethod("POST", new apigateway.LambdaIntegration(bulletinFn), authOptions);
+    // リアクション（Phase 9、トグルのみ）
+    const bulletinReactionsResource = bulletinItem.addResource("reactions");
+    bulletinReactionsResource.addMethod("PUT", new apigateway.LambdaIntegration(bulletinFn), authOptions);
 
     const bulletinCategoriesResource = this.restApi.root.addResource("bulletin-categories");
     bulletinCategoriesResource.addMethod("GET", new apigateway.LambdaIntegration(bulletinFn), authOptions);

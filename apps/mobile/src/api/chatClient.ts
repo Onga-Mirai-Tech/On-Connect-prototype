@@ -29,8 +29,15 @@ export interface CreateRoomInput {
   memberUserIds: string[];
 }
 
+export interface ToggleReactionInput {
+  roomId: string;
+  messageId: string;
+  emoji: string;
+  userId: string;
+}
+
 const CHAT_ROOM_FIELDS = `roomId isGroup name memberUserIds createdAt`;
-const MESSAGE_FIELDS = `messageId roomId senderId body attachmentKeys readByUserIds status scheduledAt forceNotify mentionedUserIds createdAt`;
+const MESSAGE_FIELDS = `messageId roomId senderId body attachmentKeys readByUserIds status scheduledAt forceNotify mentionedUserIds reactions { emoji userIds } createdAt`;
 
 const listChatRoomsForUserQuery = `query ListChatRoomsForUser($userId: ID!) {
   listChatRoomsForUser(userId: $userId) { ${CHAT_ROOM_FIELDS} }
@@ -50,11 +57,17 @@ const markMessageReadMutation = `mutation MarkMessageRead($input: MarkReadInput!
 const createRoomMutation = `mutation CreateRoom($input: CreateRoomInput!) {
   createRoom(input: $input) { ${CHAT_ROOM_FIELDS} }
 }`;
+const toggleMessageReactionMutation = `mutation ToggleMessageReaction($input: ToggleReactionInput!) {
+  toggleMessageReaction(input: $input) { ${MESSAGE_FIELDS} }
+}`;
 const onMessageSentSubscription = `subscription OnMessageSent($roomId: ID!) {
   onMessageSent(roomId: $roomId) { ${MESSAGE_FIELDS} }
 }`;
 const onMessageReadSubscription = `subscription OnMessageRead($roomId: ID!) {
   onMessageRead(roomId: $roomId) { ${MESSAGE_FIELDS} }
+}`;
+const onMessageReactionChangedSubscription = `subscription OnMessageReactionChanged($roomId: ID!) {
+  onMessageReactionChanged(roomId: $roomId) { ${MESSAGE_FIELDS} }
 }`;
 
 function ensureConfigured() {
@@ -116,6 +129,15 @@ export const chatClient = {
     return res.data.createRoom;
   },
 
+  toggleMessageReaction: async (input: ToggleReactionInput): Promise<Message> => {
+    ensureConfigured();
+    const res = await client.graphql<GraphQLQuery<{ toggleMessageReaction: Message }>>({
+      query: toggleMessageReactionMutation,
+      variables: { input },
+    });
+    return res.data.toggleMessageReaction;
+  },
+
   /** 新着メッセージを購読する。戻り値の関数を呼ぶと購読解除する。 */
   subscribeToMessages: (roomId: string, onNext: (message: Message) => void): (() => void) => {
     const sub = client
@@ -144,6 +166,22 @@ export const chatClient = {
           if (data?.onMessageRead) onNext(data.onMessageRead);
         },
         error: (err) => console.error("subscribeToReads error", err),
+      });
+    return () => sub.unsubscribe();
+  },
+
+  /** リアクション変更を購読する。戻り値の関数を呼ぶと購読解除する。 */
+  subscribeToReactions: (roomId: string, onNext: (message: Message) => void): (() => void) => {
+    const sub = client
+      .graphql<GraphQLSubscription<{ onMessageReactionChanged: Message }>>({
+        query: onMessageReactionChangedSubscription,
+        variables: { roomId },
+      })
+      .subscribe({
+        next: ({ data }) => {
+          if (data?.onMessageReactionChanged) onNext(data.onMessageReactionChanged);
+        },
+        error: (err) => console.error("subscribeToReactions error", err),
       });
     return () => sub.unsubscribe();
   },
