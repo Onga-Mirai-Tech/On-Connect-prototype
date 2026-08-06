@@ -1,10 +1,8 @@
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { mockMembers, mockCurrentUserId } from "@on-connect/shared";
 import { useNotificationStatus } from "../context/NotificationStatusContext";
+import { useAuth } from "../context/AuthContext";
 import { colors } from "../theme/colors";
-
-const currentMember = mockMembers.find((m) => m.userId === mockCurrentUserId);
 
 /**
  * ヘッダー左側に表示する「ログイン中メンバー名＋通知ON/OFF状態」。
@@ -12,10 +10,11 @@ const currentMember = mockMembers.find((m) => m.userId === mockCurrentUserId);
  */
 export function HeaderStatus() {
   const { status } = useNotificationStatus();
+  const { currentUser } = useAuth();
 
   return (
     <View style={styles.container}>
-      <Text style={styles.name}>{currentMember?.displayName ?? "ゲスト"}</Text>
+      <Text style={styles.name}>{currentUser?.displayName ?? "ゲスト"}</Text>
       {status === "ON" ? (
         <View style={styles.badge}>
           <Ionicons name="notifications-outline" size={12} color={colors.brandDark} />

@@ -34,6 +34,7 @@ const shiftAdminPermissions: RolePermissions = { ...noPermissions, manageShifts:
 
 const memberCaller: User = {
   userId: "caller-1",
+  loginId: "staff-caller-1",
   displayName: "田中",
   furigana: "たなか",
   email: "tanaka@example.com",

@@ -6,13 +6,13 @@ import {
   mockBulletinComments,
   mockBulletinCategories,
   mockMembers,
-  mockCurrentUserId,
   toggleReaction,
   type BulletinPost,
   type BulletinComment,
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
+import { useAuth } from "../context/AuthContext";
 
 const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 const categoryName = (categoryId: string | undefined) =>
@@ -23,6 +23,7 @@ const categoryName = (categoryId: string | undefined) =>
  * TODO: GET /bulletin-posts/{postId} 、コメントAPIに接続する（現状はダミーデータ表示）
  */
 export function BulletinDetailPage() {
+  const { currentUserId } = useAuth();
   const { postId = "" } = useParams();
   const initialPost = mockBulletinPosts.find((p) => p.postId === postId);
 
@@ -38,7 +39,7 @@ export function BulletinDetailPage() {
 
   const handleToggleReaction = (emoji: string) => {
     // TODO: 掲示板リアクションAPIに接続する
-    setPost((prev) => (prev ? { ...prev, reactions: toggleReaction(prev.reactions, emoji, mockCurrentUserId) } : prev));
+    setPost((prev) => (prev ? { ...prev, reactions: toggleReaction(prev.reactions, emoji, currentUserId ?? "") } : prev));
   };
 
   const handleAddComment = (e: React.FormEvent) => {
@@ -50,7 +51,7 @@ export function BulletinDetailPage() {
       {
         commentId: `local-${Date.now()}`,
         postId,
-        authorId: mockCurrentUserId,
+        authorId: currentUserId ?? "",
         body: commentBody,
         createdAt: new Date().toISOString(),
       },
@@ -78,7 +79,7 @@ export function BulletinDetailPage() {
         dangerouslySetInnerHTML={{ __html: post.body }}
       />
       <div style={{ marginTop: 12 }}>
-        <ReactionBar reactions={post.reactions} currentUserId={mockCurrentUserId} onToggle={handleToggleReaction} />
+        <ReactionBar reactions={post.reactions} currentUserId={currentUserId ?? ""} onToggle={handleToggleReaction} />
       </div>
 
       <h3 style={{ marginTop: 24 }}>コメント（{comments.length}）</h3>

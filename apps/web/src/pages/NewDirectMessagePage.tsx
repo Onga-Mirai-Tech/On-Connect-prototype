@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, UserRound } from "lucide-react";
-import { mockMembers, mockChatRooms, mockCurrentUserId, memberMatchesQuery } from "@on-connect/shared";
+import { mockMembers, mockChatRooms, memberMatchesQuery } from "@on-connect/shared";
+import { useAuth } from "../context/AuthContext";
 
 /**
  * 個別メッセージ開始画面（登録メンバーを検索し、1対1チャットを開く窓口）
@@ -9,13 +10,14 @@ import { mockMembers, mockChatRooms, mockCurrentUserId, memberMatchesQuery } fro
  * TODO: GET /users でメンバー一覧を取得する（現状はダミーデータ表示）。
  */
 export function NewDirectMessagePage() {
+  const { currentUserId } = useAuth();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const members = mockMembers.filter((m) => m.userId !== mockCurrentUserId);
+  const members = mockMembers.filter((m) => m.userId !== currentUserId);
 
   const handleSelect = (userId: string) => {
     const existingRoom = mockChatRooms.find(
-      (r) => !r.isGroup && r.memberUserIds.includes(mockCurrentUserId) && r.memberUserIds.includes(userId),
+      (r) => !r.isGroup && r.memberUserIds.includes(currentUserId ?? "") && r.memberUserIds.includes(userId),
     );
     navigate(`/chat/${existingRoom?.roomId ?? `dm-${userId}`}`);
   };

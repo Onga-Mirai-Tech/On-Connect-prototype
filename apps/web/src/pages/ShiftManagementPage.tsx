@@ -6,7 +6,6 @@ import {
   mockDutyTypes,
   mockShiftTypes,
   mockDailyNotes,
-  mockCurrentUserId,
   weekdayLabelForDate,
   holidayNameForDate,
   type MemberDailyStatus,
@@ -15,6 +14,7 @@ import {
   type LeaveReason,
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 const leaveLabel: Record<LeaveType, string> = { FULL: "休", AM: "午前休", PM: "午後休" };
 const leaveReasonLabel: Record<LeaveReason, string> = { REQUESTED: "希望休", ASSIGNED: "指定休" };
@@ -45,6 +45,7 @@ const activeShiftTypes = mockShiftTypes.filter((s) => s.isActive);
  * GET /daily-notes/{date} / PUT /daily-notes/{date} をAPIに接続する（現状はダミーデータのローカルstateのみ）
  */
 export function ShiftManagementPage() {
+  const { currentUserId, currentUser } = useAuth();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
@@ -53,7 +54,6 @@ export function ShiftManagementPage() {
   const [editing, setEditing] = useState<{ userId: string; date: string } | null>(null);
   const [editingNoteDate, setEditingNoteDate] = useState<string | null>(null);
 
-  const currentUser = mockMembers.find((m) => m.userId === mockCurrentUserId);
   const canEdit = currentUser?.permissions.manageShifts ?? false;
 
   const dayCount = daysInMonth(year, month);
@@ -112,7 +112,7 @@ export function ShiftManagementPage() {
         ...base,
         ...patch,
         updatedAt: new Date().toISOString(),
-        updatedBy: mockCurrentUserId,
+        updatedBy: currentUserId ?? "",
       };
       const next = [...prev];
       if (idx >= 0) next[idx] = updated;
@@ -131,7 +131,7 @@ export function ShiftManagementPage() {
     // TODO: PUT /daily-notes/{date} を呼び出す（現状はローカルstateのみ）
     setNotes((prev) => {
       const idx = prev.findIndex((n) => n.date === date);
-      const updated: DailyNote = { date, note, updatedAt: new Date().toISOString(), updatedBy: mockCurrentUserId };
+      const updated: DailyNote = { date, note, updatedAt: new Date().toISOString(), updatedBy: currentUserId ?? "" };
       const next = [...prev];
       if (idx >= 0) next[idx] = updated;
       else next.push(updated);

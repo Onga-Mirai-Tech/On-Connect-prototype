@@ -1,10 +1,8 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { MessageCircle, ClipboardList, CalendarDays, Menu, Bell, BellOff } from "lucide-react";
-import { mockMembers, mockCurrentUserId } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { useNotificationStatus } from "../context/NotificationStatusContext";
-
-const currentMember = mockMembers.find((m) => m.userId === mockCurrentUserId);
+import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/chat", label: "チャット", icon: MessageCircle },
@@ -20,6 +18,7 @@ const navItems = [
  */
 export function HomeLayout() {
   const { status } = useNotificationStatus();
+  const { currentUser } = useAuth();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
@@ -36,7 +35,7 @@ export function HomeLayout() {
         <span style={{ fontWeight: 700 }}>On-Connect</span>
         <span style={{ width: 1, alignSelf: "stretch", background: "rgba(0,0,0,0.15)" }} />
         <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 14 }}>
-          <span style={{ fontWeight: 600 }}>{currentMember?.displayName ?? "ゲスト"}</span>
+          <span style={{ fontWeight: 600 }}>{currentUser?.displayName ?? "ゲスト"}</span>
           {status === "ON" ? (
             <span style={{ display: "flex", alignItems: "center", gap: 2, color: "#1A1A1A" }}>
               <Bell size={14} /> 通知ON

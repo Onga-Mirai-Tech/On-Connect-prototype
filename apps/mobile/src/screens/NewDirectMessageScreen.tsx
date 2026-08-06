@@ -2,9 +2,10 @@ import { useState } from "react";
 import { View, TextInput, FlatList, Pressable, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockMembers, mockChatRooms, mockCurrentUserId, memberMatchesQuery } from "@on-connect/shared";
+import { mockMembers, mockChatRooms, memberMatchesQuery } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "NewDirectMessage">;
 
@@ -13,12 +14,13 @@ type Props = NativeStackScreenProps<ChatStackParamList, "NewDirectMessage">;
  * TODO: GET /users でメンバー一覧を取得する（現状はダミーデータ表示）。
  */
 export function NewDirectMessageScreen({ navigation }: Props) {
+  const { currentUserId } = useAuth();
   const [query, setQuery] = useState("");
-  const members = mockMembers.filter((m) => m.userId !== mockCurrentUserId);
+  const members = mockMembers.filter((m) => m.userId !== currentUserId);
 
   const handleSelect = (userId: string) => {
     const existingRoom = mockChatRooms.find(
-      (r) => !r.isGroup && r.memberUserIds.includes(mockCurrentUserId) && r.memberUserIds.includes(userId),
+      (r) => !r.isGroup && r.memberUserIds.includes(currentUserId ?? "") && r.memberUserIds.includes(userId),
     );
     navigation.navigate("ChatRoom", { roomId: existingRoom?.roomId ?? `dm-${userId}` });
   };

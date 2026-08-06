@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 7完了）
+# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8a完了）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -18,9 +18,11 @@
 （Plan modeで作成したもの。Context・全6フェーズの変更ファイル一覧が載っている。Phase1〜6は全て完了済み）。
 
 その後、カレンダーのUI改善（月表示・週表示対応、Phase 7）を追加実装。あわせてこれまでの議論で
-当初計画から大きく発展した内容を整理し、残っている作業をPhase 8〜12として再洗い出しした
-（**Phase 7の技術方針＋Phase 8〜12のロードマップは
-`/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md` に記録済み**）。
+当初計画から大きく発展した内容を整理し、残っている作業をPhase 8〜12として再洗い出しした上で、
+最優先のPhase 8のうち認証基盤部分（8a）を実装した（**Phase 7の技術方針＋Phase 8〜12のロードマップ＋
+Phase 8aの実装計画・決定事項は`/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`
+に記録済み**）。Phase 8aは実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作の
+確認はできていない点に注意（8a〜8dが一通り終わった段階でユーザーに確認の上デプロイする既定方針）。
 
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
@@ -36,9 +38,14 @@
 - **Phase 7（カレンダー月表示・週表示対応）**：完了・web/mobile双方でブラウザ/型チェック確認済み
   （詳細は下記3章29.参照）。当初「Googleカレンダーへのリンクのみ」という設計だったためリスト表示
   しか計画されていなかったが、独立DB化（Phase 2）で前提が変わったため今回対応した
+- **Phase 8a（Cognito認証基盤）**：コード実装完了。infra全101テスト・`cdk synth`・web
+  build・mobile tscは通過済み。ただし**実際のCognitoにはまだ一度もデプロイしておらず、
+  本物のログインの動作確認はできていない**（設計時からの既定方針。8a〜8dが一通り終わった段階で
+  改めてユーザーに確認してからデプロイする）。詳細は下記3章30.参照
 
-### 未着手のフェーズ（Phase 8〜12、優先順に記載。詳細は8章参照）
-- **Phase 8: Cognito認証・AppSyncクライアント接続**（最優先・最大規模。他の全フェーズが実質的にこれに依存）
+### Phase 8b〜12（未着手、優先順に記載。詳細は8章参照）
+- **Phase 8b〜8d: 残りのREST/AppSync接続**（8aで作った認証基盤の上に、Users以外のリソース・
+  チャットのAppSyncを順次接続する）
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
 - **Phase 10: 予約送信の実スケジューリング**（Phase 8後、既存インフラの実地検証が中心）
 - **Phase 11: Amazon Chime SDK音声通話実装**（Phase 8後、実機検証にAWSデプロイが必要）
@@ -46,10 +53,10 @@
 
 ### 現在のコミット状況
 Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
-Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**（`git log`で確認すること。
-コミットハッシュ`bffbaf8`まで）。**Phase 7（3章29.）の変更は、本セッション終了時点でまだ未コミット**
-（作業ツリーに残っている）。次回セッション開始時は`git status`で確認し、必要ならユーザーに確認の上
-コミットすること。
+Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決定事項の記録は**コミット済み・未push**
+（`git log`で確認すること。コミットハッシュ`19a94bb`まで）。**Phase 8a（3章30.）の変更は、
+本セッション終了時点でまだ未コミット**（作業ツリーに残っている）。次回セッション開始時は
+`git status`で確認し、必要ならユーザーに確認の上コミットすること。
 
 ### AWSデプロイの状況
 **Phase 1〜3の変更はAWSにデプロイされていない**（ローカルの`npm test`・`cdk synth`のみで確認）。
@@ -81,7 +88,7 @@ Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**�
   `git push`が通る状態（credential helperは`gh auth setup-git`で設定）
 - Web: `npm run build --workspace apps/web` 成功
 - Mobile: `npx tsc --noEmit`（apps/mobile内）成功。シミュレータでの実機確認は未実施
-- `infra`: `cdk synth` と Jestテスト成功（Phase6完了時点で**96件**）
+- `infra`: `cdk synth` と Jestテスト成功（Phase8a完了時点で**101件**）
 - **エクセルファイル読み込みの注意**：macOSの`~/.Trash`（ゴミ箱）はTCC制限で`openpyxl`等から直接読めない
   （`Operation not permitted`）。ユーザーにデスクトップ等へ移動してもらう必要がある
 
@@ -276,6 +283,71 @@ Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**�
       日付セルクリックでの週表示ドリルダウン、予定チップクリックでの詳細画面遷移を実際に動かして確認済み。
       packages/sharedにはテストランナーが無い既存方針を踏襲し、`calendarGrid.ts`自体の自動テストは
       追加していない（ブラウザでの動作確認で代替）
+30. **【Phase 8a】Cognito認証基盤**：ダミーのログイン画面を実際のAWS Amplify＋Cognito認証に置き換えた。
+    このフェーズの範囲は「実際にログインできる」「アプリ全体が『今ログインしている人』を把握できる」の
+    2点まで。チャット・掲示板等の業務データは引き続きモックのまま（8b/8c以降の対象）。
+    - `packages/shared/src/types.ts`：`User`に`loginId`（Cognitoのusername）を追加、`email`を任意化。
+      `mockData.ts`の9人のダミーメンバーにも`loginId`（staff01〜09）を付与
+    - 新規`infra/lambda/common/cognito.ts`：`generateTemporaryPassword`（紛らわしい文字を除いた
+      文字集合からランダム生成、紙に手書きする運用を考慮）、`createCognitoUser`/`getCognitoUserStatus`/
+      `reissueTemporaryPassword`
+    - `infra/lambda/users/index.ts`：`POST /users`を書き換え、呼び出し側が`userId`を指定する方式から
+      `loginId`を指定してCognitoアカウントを作成し、返ってきた`sub`を`userId`として使う方式に変更
+      （元々のコードに「userIdはCognitoの発行するsubと一致させる想定」というコメントがあり、
+      設計時からこの形が意図されていたことが分かった）。DynamoDB書き込み失敗時は`AdminDeleteUser`で
+      Cognito側もロールバックする。`GET /users`はCognitoの`AdminGetUser`を都度呼び`loginStatus`
+      （初回ログイン未了/完了/未発行）を付加。新規`POST /users/{userId}/reset-password`
+      （管理者によるパスワード再発行、`manageUsers`権限必須）
+    - **全APIルートが元々Cognito認証必須だったため、初回セットアップ用の権限チェック回避ロジックは
+      「テーブルが空なら」を条件にしていたが、API Gateway自体が未認証リクエストをそもそも通さないため
+      機能しないことが判明**。最初の管理者アカウントは今後AWS CLI/コンソールから手動作成する運用とし、
+      コードでは解決しない（この事実は実装中に発見、設計判断として記録）
+    - `infra/lib/constructs/api-construct.ts`：`usersFn`に`USER_POOL_ID`環境変数と
+      `cognito-idp:AdminCreateUser`/`AdminGetUser`/`AdminSetUserPassword`/`AdminDeleteUser`の
+      IAMポリシー（UserPool ARNにスコープ）を追加、`/users/{userId}/reset-password`ルート追加
+    - `apps/web/src/pages/AdminPage.tsx`：「ユーザー管理」タブに「スタッフを追加」フォーム
+      （表示名・ふりがな・ログインID（次のstaffNNを自動サジェスト、編集可）・ロール・メンバーカテゴリ）、
+      作成後の仮パスワード表示パネル（再表示不可の警告付き）、メンバー一覧に「ログイン状況」列、
+      「パスワード再発行」ボタンを追加。この管理機能は本物のREST APIを呼ぶ（未デプロイ時は
+      失敗を捕捉しダミーデータへフォールバック）。他のタブ（ロール/カテゴリー管理等）は変更なし
+    - Web：新規`AuthContext.tsx`（`NotificationStatusContext.tsx`と同じProvider+フック形式。
+      Amplifyの`signIn`/`confirmSignIn`/`signOut`/`getCurrentUser`/`fetchAuthSession`をラップ）。
+      `LoginPage.tsx`を通常サインイン＋初回ログイン時の「新しいパスワードを設定」の2段階フォームに
+      作り直し。`router.tsx`に`RequireAuth`（未ログイン時`/login`へリダイレクト）、`App.tsx`で
+      `AuthProvider`が`NotificationStatusProvider`の外側に来るよう変更しローディング中はブランク表示。
+      `NotificationStatusContext.tsx`はモジュールスコープの mock 参照をやめ`useAuth().currentUser`から
+      初期値を取る形に変更。`mockCurrentUserId`を参照していた18ファイル中、モジュールスコープでの参照が
+      あった`HomeLayout.tsx`と`NotificationStatusContext.tsx`に加え、当初のリストに無かった
+      `MenuPage.tsx`（`mockCurrentUserIsAdmin`という派生定数を参照）も構造変更が必要と判明。
+      残りは`useAuth().currentUserId`への単純置き換え
+    - Mobile：`aws-amplify`・`@aws-amplify/react-native`・`@react-native-async-storage/async-storage`・
+      `react-native-get-random-values`・`react-native-url-polyfill`を追加。
+      **`react-native-get-random-values`の最新版(2.0.0)はReact Native 0.81以上が必要でこのプロジェクトの
+      0.74.5と非互換だったため、1.11.0を使用**（`npm install`時にpeer dependencyエラーで発覚、
+      Phase 6のexpo-file-system等と同様のバージョン確認が必要なケース）。`App.tsx`の先頭で
+      ポリフィルをimportしてから`amplifyConfig.ts`でAmplify設定、Provider入れ子順は
+      `AuthProvider`→`NotificationStatusProvider`→`AppNavigator`。`LoginScreen.tsx`・
+      `AppNavigator.tsx`（`useAuth().currentUserId`の有無でLogin/Home系統を出し分け、
+      以前のように両方を常時登録する形はやめた）も同様に変更。`HeaderStatus.tsx`・mobile版
+      `NotificationStatusContext.tsx`も構造変更、残り9画面は単純置き換え。`MenuScreen.tsx`/
+      `MenuPage.tsx`双方に「サインアウト」導線を追加（元の計画には無かったが、実際にログイン基盤を
+      作る以上サインアウト手段が無いと機能として片手落ちのため追加）
+    - 環境変数：`apps/web/.env.example`（`VITE_USER_POOL_ID`等）、`apps/mobile/.env.example`
+      （`EXPO_PUBLIC_USER_POOL_ID`等）。デプロイ前は空文字列でも起動時エラーにはならず、
+      実際にログインを試みた時点でAmplify側のエラーになる設計（ブラウザで実際に確認：
+      「Auth UserPool not configured.」という分かりやすいエラーが表示され、クラッシュや無限ループは
+      起きないことを確認済み）
+    - テスト：`infra/test/lambda/users.test.ts`にCognito関連7ケース追加
+      （アカウント作成成功・ログインID重複409・DynamoDB失敗時のCognitoロールバック・
+      ログイン状況の付加（CONFIRMED/UNPROVISIONED）・パスワード再発行3ケース）、
+      プロジェクト全体で101件、全green。`cdk synth`でIAM文・環境変数配線を確認。
+      `npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）も通過。
+      ブラウザで未ログイン時に`/`へアクセスすると`/login`へリダイレクトされること、
+      ログインフォームが「メールアドレス」ではなく「ログインID」表記になっていること、
+      送信するとAmplifyの設定エラーが正しく捕捉されて画面に表示されることを確認済み
+    - **未検証**：実際のCognitoに対するログイン成功/失敗、AdminPageのスタッフ追加・パスワード再発行の
+      実地動作、8bで予定しているUsersリソースの本接続。いずれも実デプロイが必要（8a〜8d完了後に
+      ユーザーへ確認してから実施する既定方針のまま）
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -306,6 +378,9 @@ Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**�
 - カレンダー予定の個別`.ics`エクスポート（`buildIcsForEvent`、Web/Mobile/Lambdaで共通利用）と
   当日リマインド通知（`dailyReminder.ts`、28.参照）。単日・複数日イベントの判定、閲覧カテゴリー
   フィルタ、通知OFF除外まで実装・テスト済み
+- Cognito認証（Phase 8a、30.参照）。ログイン・初回パスワード設定・サインアウト、管理者による
+  アカウント発行・ログイン状況確認・パスワード再発行。**コードは実装済みだが実際のCognitoに
+  デプロイしておらず、本物のログイン成功/失敗の動作確認はまだできていない**
 
 ### 未実装（TODOコメントあり、501スタブ等）
 - Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装）
@@ -313,8 +388,8 @@ Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**�
   チャット側の`pushNotification.ts`とは別ファイルで、Phase 5・6のどちらでも対応対象外だった）
 - リアクション/コメントの永続化API（掲示板コメント用のDynamoDBテーブルは未作成）
 - Amazon Chime SDK Meeting/Attendee作成（音声通話は現状デモの着信画面遷移のみ）
-- Cognito認証・AppSyncクライアント接続（web/mobileともにログインはダミーで素通り。チャット機能全体が
-  バックエンド未接続。そのためメンション機能もチャットと同様ローカルstateのみで完結）
+- AppSyncクライアント接続（チャット機能は全体がバックエンド未接続のまま。8a完了時点でも
+  チャット周りの画面はローカルstateのまま変更していない。REST API側（users以外）の接続も8b/8c待ち）
 - 実際のモバイルプッシュ配信（SNSトピック以降のAPNs/FCM接続。チャット・カレンダーリマインドとも
   SNS発行までは実装済みだが、その先のデバイス配信は未接続）
 
@@ -351,7 +426,9 @@ Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**�
 | チャット新着メッセージのプッシュ通知判定（forceNotify/メンション/デフォルト全員） | `infra/lambda/messages/pushNotification.ts` |
 | カレンダー予定の当日リマインド | `infra/lambda/calendar/dailyReminder.ts` |
 | GraphQLスキーマ（チャット、mentionedUserIds含む） | `infra/graphql/schema.graphql` |
-| Lambda単体テスト（aws-sdk-client-mock使用、96件） | `infra/test/lambda/*.test.ts` |
+| Lambda単体テスト（aws-sdk-client-mock使用、101件） | `infra/test/lambda/*.test.ts` |
+| Cognitoアカウント作成・ログイン状況・パスワード再発行ヘルパー | `infra/lambda/common/cognito.ts` |
+| Web/Mobile: 認証状態管理（Amplifyラップ） | `apps/web/src/context/AuthContext.tsx` / `apps/mobile/src/context/AuthContext.tsx` |
 | Web: ルーティング | `apps/web/src/router.tsx` |
 | Web: 共通レイアウト・ヘッダー・下部タブ（4タブ：チャット/掲示板/カレンダー/メニュー） | `apps/web/src/pages/HomeLayout.tsx` |
 | Web: メニュー画面（メンバー/シフト管理/リンク集/個人設定/管理者設定への導線） | `apps/web/src/pages/MenuPage.tsx` |
@@ -377,21 +454,20 @@ Phase 5（3章27.）＋Phase 6（3章28.）は**コミット済み・未push**�
 **Phase 8が他の全フェーズを実質的にブロックする**ため最優先。Phase 9〜12はPhase 8完了後であれば
 互いに強い依存関係は無く、着手順はユーザーの優先度判断で決めてよい。
 
-- **Phase 8: Cognito認証・AppSyncクライアント接続**（最優先・最大規模）
-  ダミーのログイン画面を実際のCognito認証に置き換え、web/mobileほぼ全画面が参照している
-  `mockCurrentUserId`を実際の認証ユーザーIDに置き換える。チャットはAppSyncクライアント
-  （sendMessage/markMessageRead/listMessagesForRoom/Subscription）に、それ以外のCRUD
-  （users/bulletin/calendar/links/shifts）はREST APIクライアント（CognitoのIDトークンをBearerで送る）
-  に接続する。影響範囲が非常に広いため、着手時は「8a: 認証基盤」「8b: REST 1リソースだけ疎通確認」
-  「8c: 残りのリソースへ展開」「8d: チャットのAppSync接続」の4ステップに細分化して進める。
-  **設計判断は全て合意済み**（メールアドレス不要・ユーザー名（職員番号方式）＋管理者発行の仮パスワード
-  （システム自動生成・7日間有効・紙で手渡し）でログイン、パスワード再設定も管理者対応のみ、
-  ログイン完了状況はAdminPageのメンバー一覧に表示、既存ダミーメンバーは少人数で試してから本番
-  アカウント化を展開、認証・API接続にはAWS Amplifyを採用、8bで最初に接続するのはメンバー一覧、
-  実デプロイの承認は8a〜8d一通り完了後に改めて確認）。
-  `infra/lib/constructs/auth-construct.ts`のCognito設定は変更済み。詳細は
+- **Phase 8: Cognito認証・AppSyncクライアント接続**（最優先・最大規模。4ステップ「8a: 認証基盤」
+  「8b: REST 1リソースだけ疎通確認」「8c: 残りのリソースへ展開」「8d: チャットのAppSync接続」に細分化）
+  - **8a（認証基盤）：コード実装完了**（詳細は3章30.参照）。ダミーのログイン画面を実際のAmplify＋
+    Cognito認証に置き換え、`mockCurrentUserId`を参照していた18ファイル全てを実際の認証ユーザーIDに
+    置き換えた。AdminPageに管理者によるアカウント発行（Cognitoアカウント作成＋仮パスワード発行）・
+    ログイン状況確認・パスワード再発行のUIも実装済み。ただし**実際のCognitoへのデプロイはまだ行っておらず、
+    本物のログインの動作確認はできていない**
+  - **8b〜8d（残りのリソース接続）：未着手**。それ以外のCRUD（bulletin/calendar/links/shifts、
+    Usersの残り部分）はREST APIクライアント（CognitoのIDトークンをBearerで送る）に、チャットは
+    AppSyncクライアント（sendMessage/markMessageRead/listMessagesForRoom/Subscription）に接続する
+  `infra/lib/constructs/auth-construct.ts`のCognito設定・`infra/lambda/common/cognito.ts`・
+  Web/Mobileの`AuthContext.tsx`は実装済み。詳細は
   `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`の
-  「Phase 8: 設計上の決定事項」参照。コード実装はまだ8a=認証基盤から未着手）
+  「Phase 8a: 認証基盤 実装計画」参照。
 - **Phase 9: リアクション/コメントの永続化**（Phase 8後）
   掲示板コメント用の新規DynamoDBテーブル・CRUD Lambdaを追加し、ローカルstateのみの
   `toggleReaction`等をAPI接続に置き換える。`bulletin/notifyOnPost.ts`（現状`console.log`のみの

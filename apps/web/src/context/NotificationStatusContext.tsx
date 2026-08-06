@@ -1,8 +1,6 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { mockMembers, mockCurrentUserId, type NotificationStatus } from "@on-connect/shared";
-
-const initialStatus: NotificationStatus =
-  mockMembers.find((m) => m.userId === mockCurrentUserId)?.notificationStatus ?? "ON";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import type { NotificationStatus } from "@on-connect/shared";
+import { useAuth } from "./AuthContext";
 
 interface NotificationStatusContextValue {
   status: NotificationStatus;
@@ -13,10 +11,17 @@ const NotificationStatusContext = createContext<NotificationStatusContextValue |
 
 /**
  * ログイン中メンバーの通知ステータス（ON/OFF）をヘッダーと個人設定画面で共有する。
- * TODO: 認証実装後はサーバー側のnotificationStatusと同期する。
+ * 初期値はAuthContextが取得した自分のプロフィール（currentUser）から取る（Phase 8a）。
+ * TODO: 変更時にサーバー側のnotificationStatusと同期する（現状はローカルstateのみ）。
  */
 export function NotificationStatusProvider({ children }: { children: ReactNode }) {
-  const [status, setStatus] = useState<NotificationStatus>(initialStatus);
+  const { currentUser } = useAuth();
+  const [status, setStatus] = useState<NotificationStatus>(currentUser?.notificationStatus ?? "ON");
+
+  useEffect(() => {
+    if (currentUser?.notificationStatus) setStatus(currentUser.notificationStatus);
+  }, [currentUser?.notificationStatus]);
+
   return (
     <NotificationStatusContext.Provider value={{ status, setStatus }}>
       {children}

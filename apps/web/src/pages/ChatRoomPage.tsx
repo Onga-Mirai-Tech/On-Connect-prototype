@@ -5,13 +5,13 @@ import {
   mockChatRooms,
   mockMembers,
   mockMessages,
-  mockCurrentUserId,
   toggleReaction,
   type Message,
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
+import { useAuth } from "../context/AuthContext";
 
 const memberName = (userId: string) => mockMembers.find((m) => m.userId === userId)?.displayName ?? userId;
 
@@ -24,9 +24,10 @@ const mentionPattern = /@([^\s@]*)$/;
  * TODO: AppSyncのクエリ・ミューテーション・サブスクリプションに置き換える（現状はダミーデータ表示）
  */
 export function ChatRoomPage() {
+  const { currentUserId } = useAuth();
   const { roomId = "" } = useParams();
   const room = mockChatRooms.find((r) => r.roomId === roomId);
-  const otherMemberId = room?.memberUserIds.find((id) => id !== mockCurrentUserId);
+  const otherMemberId = room?.memberUserIds.find((id) => id !== currentUserId);
   const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
   const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "") : roomId;
   const participantNames = room?.isGroup
@@ -40,7 +41,7 @@ export function ChatRoomPage() {
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
 
   const roomMembers = mockMembers.filter(
-    (m) => room?.memberUserIds.includes(m.userId) && m.userId !== mockCurrentUserId,
+    (m) => room?.memberUserIds.includes(m.userId) && m.userId !== currentUserId,
   );
   const mentionMatch = mentionPattern.exec(body);
 
@@ -60,9 +61,9 @@ export function ChatRoomPage() {
       {
         messageId: `local-${Date.now()}`,
         roomId,
-        senderId: mockCurrentUserId,
+        senderId: currentUserId ?? "",
         body,
-        readByUserIds: [mockCurrentUserId],
+        readByUserIds: [currentUserId ?? ""],
         status: scheduledAt ? "scheduled" : "sent",
         scheduledAt: scheduledAt || undefined,
         forceNotify,
@@ -84,7 +85,7 @@ export function ChatRoomPage() {
     // TODO: AppSyncのミューテーションでリアクションを永続化する
     setMessages((prev) =>
       prev.map((m) =>
-        m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, mockCurrentUserId) } : m,
+        m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, currentUserId ?? "") } : m,
       ),
     );
   };
@@ -123,7 +124,7 @@ export function ChatRoomPage() {
       <div style={{ flex: 1, overflowY: "auto", border: "1px solid #eee", borderRadius: 14, padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
         {messages.length === 0 && <p>メッセージはまだありません。</p>}
         {messages.map((m) => {
-          const isSelf = m.senderId === mockCurrentUserId;
+          const isSelf = m.senderId === currentUserId;
           return (
             <div key={m.messageId} style={{ alignSelf: isSelf ? "flex-end" : "flex-start", maxWidth: "70%" }}>
               {room?.isGroup && !isSelf && (
@@ -157,7 +158,7 @@ export function ChatRoomPage() {
               <div style={{ marginTop: 4 }}>
                 <ReactionBar
                   reactions={m.reactions}
-                  currentUserId={mockCurrentUserId}
+                  currentUserId={currentUserId ?? ""}
                   onToggle={(emoji) => handleToggleReaction(m.messageId, emoji)}
                 />
               </div>

@@ -8,11 +8,11 @@ import {
   mockMemberCategories,
   mockRoles,
   mockChatRooms,
-  mockCurrentUserId,
   memberMatchesQuery,
 } from "@on-connect/shared";
 import type { MenuStackParamList, HomeTabParamList, RootStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 type Props = NativeStackScreenProps<MenuStackParamList, "Members">;
 
@@ -23,6 +23,7 @@ type Props = NativeStackScreenProps<MenuStackParamList, "Members">;
  * TODO: GET /users からメンバー一覧を取得する（現状はダミーデータ表示）。
  */
 export function MembersScreen({ navigation }: Props) {
+  const { currentUserId } = useAuth();
   const [query, setQuery] = useState("");
 
   const categoryName = (categoryId: string) =>
@@ -30,7 +31,7 @@ export function MembersScreen({ navigation }: Props) {
 
   const handleChat = (memberId: string) => {
     const existingRoom = mockChatRooms.find(
-      (r) => !r.isGroup && r.memberUserIds.includes(mockCurrentUserId) && r.memberUserIds.includes(memberId),
+      (r) => !r.isGroup && r.memberUserIds.includes(currentUserId ?? "") && r.memberUserIds.includes(memberId),
     );
     const tabNavigation = navigation.getParent<BottomTabNavigationProp<HomeTabParamList>>();
     tabNavigation?.navigate("ChatTab", {
@@ -73,7 +74,7 @@ export function MembersScreen({ navigation }: Props) {
         ListEmptyComponent={<Text>該当するメンバーが見つかりません。</Text>}
         renderSectionHeader={({ section }) => <Text style={styles.sectionTitle}>{section.title}</Text>}
         renderItem={({ item }) => {
-          const isSelf = item.userId === mockCurrentUserId;
+          const isSelf = item.userId === currentUserId;
           return (
             <View style={styles.row}>
               <View style={styles.info}>

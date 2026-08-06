@@ -23,6 +23,7 @@ import { ShiftManagementScreen } from "../screens/ShiftManagementScreen";
 import { MenuScreen } from "../screens/MenuScreen";
 import { HeaderStatus } from "./HeaderStatus";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 export type ChatStackParamList = {
   ChatList: undefined;
@@ -174,17 +175,28 @@ function HomeTabs() {
   );
 }
 
+/**
+ * 未ログイン時はLogin画面のみ、ログイン中はHome/IncomingCallのみを登録する（Phase 8a）。
+ * サインイン成功でAuthContextのcurrentUserIdが更新されると、この分岐が自動的に切り替わる。
+ */
 export function AppNavigator() {
+  const { currentUserId } = useAuth();
+
   return (
     <NavigationContainer>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
-        <RootStack.Screen name="Login" component={LoginScreen} />
-        <RootStack.Screen name="Home" component={HomeTabs} />
-        <RootStack.Screen
-          name="IncomingCall"
-          component={IncomingCallScreen}
-          options={{ presentation: "fullScreenModal" }}
-        />
+        {currentUserId ? (
+          <>
+            <RootStack.Screen name="Home" component={HomeTabs} />
+            <RootStack.Screen
+              name="IncomingCall"
+              component={IncomingCallScreen}
+              options={{ presentation: "fullScreenModal" }}
+            />
+          </>
+        ) : (
+          <RootStack.Screen name="Login" component={LoginScreen} />
+        )}
       </RootStack.Navigator>
     </NavigationContainer>
   );

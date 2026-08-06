@@ -60,6 +60,7 @@ export class ApiConstruct extends Construct {
       USERS_TABLE_NAME: props.usersTable.tableName,
       ROLES_TABLE_NAME: props.rolesTable.tableName,
       MEMBER_CATEGORIES_TABLE_NAME: props.memberCategoriesTable.tableName,
+      USER_POOL_ID: props.userPool.userPoolId,
     };
 
     // --- ユーザー・ロール・メンバーカテゴリ管理（5.1） ---
@@ -72,6 +73,18 @@ export class ApiConstruct extends Construct {
     props.usersTable.grantReadWriteData(usersFn);
     props.rolesTable.grantReadWriteData(usersFn);
     props.memberCategoriesTable.grantReadWriteData(usersFn);
+    // 職員追加時のCognitoアカウント作成・ログイン状況確認・パスワード再発行（Phase 8a）
+    usersFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminGetUser",
+          "cognito-idp:AdminSetUserPassword",
+          "cognito-idp:AdminDeleteUser",
+        ],
+        resources: [props.userPool.userPoolArn],
+      }),
+    );
 
     const usersResource = this.restApi.root.addResource("users");
     usersResource.addMethod("GET", new apigateway.LambdaIntegration(usersFn), authOptions);
@@ -80,6 +93,8 @@ export class ApiConstruct extends Construct {
     userItem.addMethod("GET", new apigateway.LambdaIntegration(usersFn), authOptions);
     userItem.addMethod("PUT", new apigateway.LambdaIntegration(usersFn), authOptions);
     userItem.addMethod("DELETE", new apigateway.LambdaIntegration(usersFn), authOptions);
+    const userResetPassword = userItem.addResource("reset-password");
+    userResetPassword.addMethod("POST", new apigateway.LambdaIntegration(usersFn), authOptions);
 
     // ロール・メンバーカテゴリの管理（5.1.3, 5.1.4）も同じLambda（usersFn）が扱う
     const rolesResource = this.restApi.root.addResource("roles");

@@ -1,4 +1,5 @@
-import { createBrowserRouter } from "react-router-dom";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
 import { HomeLayout } from "./pages/HomeLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatListPage } from "./pages/ChatListPage";
@@ -19,32 +20,44 @@ import { AdminPage } from "./pages/AdminPage";
 import { ShiftManagementPage } from "./pages/ShiftManagementPage";
 import { MenuPage } from "./pages/MenuPage";
 
+/** 未ログイン時は/loginへリダイレクトする（Phase 8a）。認証状態解決中はApp.tsx側でローディング表示するため、ここではisLoadingを考慮しない。 */
+function RequireAuth() {
+  const { currentUserId } = useAuth();
+  if (!currentUserId) return <Navigate to="/login" replace />;
+  return <Outlet />;
+}
+
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
-  { path: "/calls/incoming", element: <IncomingCallPage /> },
   {
-    path: "/",
-    element: <HomeLayout />,
+    element: <RequireAuth />,
     children: [
-      { index: true, element: <ChatListPage /> },
-      { path: "chat", element: <ChatListPage /> },
-      { path: "chat/new-direct", element: <NewDirectMessagePage /> },
-      { path: "chat/new-group", element: <GroupChatCreatePage /> },
-      { path: "chat/:roomId", element: <ChatRoomPage /> },
-      { path: "members", element: <MembersPage /> },
-      { path: "bulletin", element: <BulletinPage /> },
-      { path: "bulletin/new", element: <BulletinEditPage /> },
-      { path: "bulletin/:postId", element: <BulletinDetailPage /> },
-      { path: "bulletin/:postId/edit", element: <BulletinEditPage /> },
-      { path: "calendar", element: <CalendarPage /> },
-      { path: "calendar/new", element: <CalendarEventEditPage /> },
-      { path: "calendar/:eventId", element: <CalendarDetailPage /> },
-      { path: "calendar/:eventId/edit", element: <CalendarEventEditPage /> },
-      { path: "shift-management", element: <ShiftManagementPage /> },
-      { path: "links", element: <LinksPage /> },
-      { path: "settings", element: <SettingsPage /> },
-      { path: "admin", element: <AdminPage /> },
-      { path: "menu", element: <MenuPage /> },
+      { path: "/calls/incoming", element: <IncomingCallPage /> },
+      {
+        path: "/",
+        element: <HomeLayout />,
+        children: [
+          { index: true, element: <ChatListPage /> },
+          { path: "chat", element: <ChatListPage /> },
+          { path: "chat/new-direct", element: <NewDirectMessagePage /> },
+          { path: "chat/new-group", element: <GroupChatCreatePage /> },
+          { path: "chat/:roomId", element: <ChatRoomPage /> },
+          { path: "members", element: <MembersPage /> },
+          { path: "bulletin", element: <BulletinPage /> },
+          { path: "bulletin/new", element: <BulletinEditPage /> },
+          { path: "bulletin/:postId", element: <BulletinDetailPage /> },
+          { path: "bulletin/:postId/edit", element: <BulletinEditPage /> },
+          { path: "calendar", element: <CalendarPage /> },
+          { path: "calendar/new", element: <CalendarEventEditPage /> },
+          { path: "calendar/:eventId", element: <CalendarDetailPage /> },
+          { path: "calendar/:eventId/edit", element: <CalendarEventEditPage /> },
+          { path: "shift-management", element: <ShiftManagementPage /> },
+          { path: "links", element: <LinksPage /> },
+          { path: "settings", element: <SettingsPage /> },
+          { path: "admin", element: <AdminPage /> },
+          { path: "menu", element: <MenuPage /> },
+        ],
+      },
     ],
   },
 ]);

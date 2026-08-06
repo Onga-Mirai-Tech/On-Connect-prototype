@@ -5,10 +5,10 @@ import {
   mockCalendarEvents,
   mockCalendarCategories,
   mockMembers,
-  mockCurrentUserId,
   buildIcsForEvent,
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 const categoryName = (categoryId: string | undefined) =>
   mockCalendarCategories.find((c) => c.categoryId === categoryId)?.name;
@@ -28,6 +28,7 @@ const formatRange = (startAt: string, endAt: string) => {
  * TODO: GET/DELETE /calendar-events/{eventId} をAPIに接続する（現状はダミーデータ表示）
  */
 export function CalendarDetailPage() {
+  const { currentUserId } = useAuth();
   const { eventId = "" } = useParams();
   const navigate = useNavigate();
   const [event] = useState(() => mockCalendarEvents.find((e) => e.eventId === eventId));
@@ -36,7 +37,7 @@ export function CalendarDetailPage() {
     return <p>予定が見つかりません。</p>;
   }
 
-  const isOwnEvent = event.authorId === mockCurrentUserId;
+  const isOwnEvent = event.authorId === currentUserId;
 
   const handleDelete = () => {
     const message = isOwnEvent

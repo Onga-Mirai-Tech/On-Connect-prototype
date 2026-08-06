@@ -1,6 +1,7 @@
 process.env.USERS_TABLE_NAME = "test-Users";
 process.env.ROLES_TABLE_NAME = "test-Roles";
 process.env.MEMBER_CATEGORIES_TABLE_NAME = "test-MemberCategories";
+process.env.USER_POOL_ID = "test-pool";
 
 import { mockClient } from "aws-sdk-client-mock";
 import {
@@ -10,11 +11,20 @@ import {
   PutCommand,
   ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
+import {
+  AdminCreateUserCommand,
+  AdminDeleteUserCommand,
+  AdminGetUserCommand,
+  AdminSetUserPasswordCommand,
+  CognitoIdentityProviderClient,
+  UserNotFoundException,
+} from "@aws-sdk/client-cognito-identity-provider";
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import type { MemberCategory, Role, RolePermissions, User } from "@on-connect/shared";
 import { handler } from "../../lambda/users/index";
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
+const cognitoMock = mockClient(CognitoIdentityProviderClient);
 
 const allPermissionsOff: RolePermissions = {
   manageUsers: false,
@@ -41,6 +51,7 @@ const allPermissionsOn: RolePermissions = {
 // デフォルトの呼び出し元(sub: "caller-1")を管理者/一般メンバーとして扱いたい場合のダミーユーザー
 const adminCallerUser: User = {
   userId: "caller-1",
+  loginId: "staff-caller-1",
   displayName: "呼び出し管理者",
   furigana: "よびだしかんりしゃ",
   email: "admin-caller@example.com",
@@ -97,13 +108,15 @@ async function invoke(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResul
 
 beforeEach(() => {
   ddbMock.reset();
+  cognitoMock.reset();
 });
 
 describe("Users CRUD", () => {
-  test("GET /users は一覧を返す（権限チェック無し）", async () => {
+  test("GET /users は一覧をログイン状況付きで返す（権限チェック無し）", async () => {
     const users: User[] = [
       {
         userId: "u1",
+        loginId: "staff01",
         displayName: "田中",
         furigana: "たなか",
         email: "tanaka@example.com",
@@ -114,23 +127,48 @@ describe("Users CRUD", () => {
       },
     ];
     ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: users });
+    cognitoMock.on(AdminGetUserCommand, { Username: "staff01" }).resolves({ UserStatus: "CONFIRMED" });
 
     const res = await invoke(buildEvent({ resource: "/users", httpMethod: "GET" }));
 
     expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(users);
+    const body = JSON.parse(res.body);
+    expect(body[0]).toMatchObject({ ...users[0], loginStatus: "CONFIRMED" });
   });
 
-  test("POST /users はUsersテーブルが空なら権限チェック無しで作成でき、permissions未指定ならall-falseになる（初期セットアップ）", async () => {
-    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] }); // isTableEmpty -> true
-    ddbMock.on(GetCommand, { TableName: "test-Users" }).resolves({});
+  test("GET /users はCognitoアカウント未発行のユーザーをUNPROVISIONEDとして返す", async () => {
+    const users: User[] = [
+      {
+        userId: "u2",
+        loginId: "staff02",
+        displayName: "佐藤",
+        furigana: "さとう",
+        roleId: "role-member",
+        memberCategoryId: "cat-1",
+        notificationStatus: "ON",
+        permissions: allPermissionsOff,
+      },
+    ];
+    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: users });
+    cognitoMock.on(AdminGetUserCommand).rejects(new UserNotFoundException({ message: "not found", $metadata: {} }));
+
+    const res = await invoke(buildEvent({ resource: "/users", httpMethod: "GET" }));
+
+    const body = JSON.parse(res.body);
+    expect(body[0].loginStatus).toBe("UNPROVISIONED");
+  });
+
+  test("POST /users はUsersテーブルが空なら権限チェック無しでCognitoアカウント＋レコードを作成できる（初期セットアップ）", async () => {
+    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] }); // isTableEmpty -> true、loginId重複チェックも空
     ddbMock.on(PutCommand).resolves({});
+    cognitoMock
+      .on(AdminCreateUserCommand)
+      .resolves({ User: { Attributes: [{ Name: "sub", Value: "cognito-sub-2" }] } });
 
     const input = {
-      userId: "u2",
+      loginId: "staff02",
       displayName: "佐藤",
       furigana: "さとう",
-      email: "sato@example.com",
       roleId: "role-member",
       memberCategoryId: "cat-1",
     };
@@ -139,9 +177,17 @@ describe("Users CRUD", () => {
     );
 
     expect(res.statusCode).toBe(201);
-    const body = JSON.parse(res.body) as User;
-    expect(body).toMatchObject(input);
-    expect(body.permissions).toEqual(allPermissionsOff);
+    const body = JSON.parse(res.body) as { user: User; temporaryPassword: string };
+    expect(body.user).toMatchObject(input);
+    expect(body.user.userId).toBe("cognito-sub-2"); // Cognitoが発行したsubがuserIdになる
+    expect(body.user.permissions).toEqual(allPermissionsOff);
+    expect(typeof body.temporaryPassword).toBe("string");
+    expect(body.temporaryPassword.length).toBeGreaterThanOrEqual(10);
+
+    const createUserCall = cognitoMock.commandCalls(AdminCreateUserCommand)[0].args[0].input;
+    expect(createUserCall.Username).toBe("staff02");
+    expect(createUserCall.MessageAction).toBe("SUPPRESS");
+    expect(createUserCall.UserAttributes).toContainEqual({ Name: "name", Value: "佐藤" });
   });
 
   test("POST /users はUsersテーブルが空でなければmanageUsers権限が無いと403", async () => {
@@ -153,10 +199,9 @@ describe("Users CRUD", () => {
         resource: "/users",
         httpMethod: "POST",
         body: JSON.stringify({
-          userId: "u2",
+          loginId: "staff02",
           displayName: "佐藤",
           furigana: "さとう",
-          email: "sato@example.com",
           roleId: "role-member",
           memberCategoryId: "cat-1",
         }),
@@ -164,23 +209,28 @@ describe("Users CRUD", () => {
     );
 
     expect(res.statusCode).toBe(403);
+    expect(cognitoMock.commandCalls(AdminCreateUserCommand)).toHaveLength(0);
   });
 
   test("POST /users はmanageUsers権限があれば作成できる", async () => {
     ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [adminCallerUser] });
+    ddbMock
+      .on(ScanCommand, { TableName: "test-Users", FilterExpression: "loginId = :loginId" })
+      .resolves({ Items: [] });
     mockCallerAsAdmin();
-    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u2" } }).resolves({});
     ddbMock.on(PutCommand).resolves({});
+    cognitoMock
+      .on(AdminCreateUserCommand)
+      .resolves({ User: { Attributes: [{ Name: "sub", Value: "cognito-sub-2" }] } });
 
     const res = await invoke(
       buildEvent({
         resource: "/users",
         httpMethod: "POST",
         body: JSON.stringify({
-          userId: "u2",
+          loginId: "staff02",
           displayName: "佐藤",
           furigana: "さとう",
-          email: "sato@example.com",
           roleId: "role-member",
           memberCategoryId: "cat-1",
         }),
@@ -190,19 +240,20 @@ describe("Users CRUD", () => {
     expect(res.statusCode).toBe(201);
   });
 
-  test("POST /users はuserId重複時に409を返す", async () => {
-    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] }); // 初期セットアップ扱いで権限チェックを回避
-    ddbMock.on(GetCommand, { TableName: "test-Users" }).resolves({ Item: { userId: "u2" } });
+  test("POST /users はログインID重複時に409を返す（Cognitoアカウントは作成しない）", async () => {
+    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] }); // isTableEmpty -> true（初期セットアップ扱い）
+    ddbMock
+      .on(ScanCommand, { TableName: "test-Users", FilterExpression: "loginId = :loginId" })
+      .resolves({ Items: [{ userId: "existing-user" }] });
 
     const res = await invoke(
       buildEvent({
         resource: "/users",
         httpMethod: "POST",
         body: JSON.stringify({
-          userId: "u2",
+          loginId: "staff02",
           displayName: "佐藤",
           furigana: "さとう",
-          email: "sato@example.com",
           roleId: "role-member",
           memberCategoryId: "cat-1",
         }),
@@ -210,11 +261,41 @@ describe("Users CRUD", () => {
     );
 
     expect(res.statusCode).toBe(409);
+    expect(cognitoMock.commandCalls(AdminCreateUserCommand)).toHaveLength(0);
+  });
+
+  test("POST /users はDynamoDB書き込み失敗時にCognitoアカウントを削除してロールバックする", async () => {
+    ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [] });
+    cognitoMock
+      .on(AdminCreateUserCommand)
+      .resolves({ User: { Attributes: [{ Name: "sub", Value: "cognito-sub-9" }] } });
+    cognitoMock.on(AdminDeleteUserCommand).resolves({});
+    ddbMock.on(PutCommand).rejects(new Error("DynamoDB failure"));
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/users",
+        httpMethod: "POST",
+        body: JSON.stringify({
+          loginId: "staff99",
+          displayName: "失敗太郎",
+          furigana: "しっぱいたろう",
+          roleId: "role-member",
+          memberCategoryId: "cat-1",
+        }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(500);
+    const deleteCalls = cognitoMock.commandCalls(AdminDeleteUserCommand);
+    expect(deleteCalls).toHaveLength(1);
+    expect(deleteCalls[0].args[0].input.Username).toBe("staff99");
   });
 
   test("PUT /users/{userId} は本人が自分のnotificationStatusだけ変更する場合は権限チェック無しで成功する", async () => {
     const self: User = {
       userId: "u5",
+      loginId: "staff05",
       displayName: "自分",
       furigana: "じぶん",
       email: "self@example.com",
@@ -243,6 +324,7 @@ describe("Users CRUD", () => {
   test("PUT /users/{userId} は本人でもnotificationStatus以外を変更するにはmanageUsers権限が必要", async () => {
     const self: User = {
       userId: "u5",
+      loginId: "staff05",
       displayName: "自分",
       furigana: "じぶん",
       email: "self@example.com",
@@ -269,6 +351,7 @@ describe("Users CRUD", () => {
   test("PUT /users/{userId} は他人の情報をmanageUsers権限無しで変更しようとすると403", async () => {
     const target: User = {
       userId: "u6",
+      loginId: "staff06",
       displayName: "他人",
       furigana: "たにん",
       email: "other@example.com",
@@ -295,6 +378,7 @@ describe("Users CRUD", () => {
   test("PUT /users/{userId} で最後の管理者(本人)からmanageUsersを外そうとすると409", async () => {
     const adminUser: User = {
       userId: "u1",
+      loginId: "staff01",
       displayName: "園長",
       furigana: "えんちょう",
       email: "encho@example.com",
@@ -323,6 +407,7 @@ describe("Users CRUD", () => {
   test("PUT /users/{userId} で他に管理者がいればmanageUsersを外せる", async () => {
     const adminUser1: User = {
       userId: "u1",
+      loginId: "staff01",
       displayName: "園長",
       furigana: "えんちょう",
       email: "encho@example.com",
@@ -331,7 +416,7 @@ describe("Users CRUD", () => {
       notificationStatus: "ON",
       permissions: allPermissionsOn,
     };
-    const adminUser2: User = { ...adminUser1, userId: "u2", displayName: "主任" };
+    const adminUser2: User = { ...adminUser1, userId: "u2", loginId: "staff02", displayName: "主任" };
 
     ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u1" } }).resolves({ Item: adminUser1 });
     ddbMock.on(ScanCommand, { TableName: "test-Users" }).resolves({ Items: [adminUser1, adminUser2] });
@@ -363,6 +448,7 @@ describe("Users CRUD", () => {
   test("DELETE /users/{userId} は最後の管理者(本人)を削除できない", async () => {
     const adminUser: User = {
       userId: "u1",
+      loginId: "staff01",
       displayName: "園長",
       furigana: "えんちょう",
       email: "encho@example.com",
@@ -390,6 +476,7 @@ describe("Users CRUD", () => {
   test("DELETE /users/{userId} はmanageUsers権限を持つ別の管理者なら一般メンバーを削除できる", async () => {
     const memberUser: User = {
       userId: "u3",
+      loginId: "staff03",
       displayName: "一般",
       furigana: "いっぱん",
       email: "member@example.com",
@@ -414,6 +501,71 @@ describe("Users CRUD", () => {
 
     const res = await invoke(
       buildEvent({ resource: "/users/{userId}", httpMethod: "GET", pathParameters: { userId: "unknown" } }),
+    );
+
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("POST /users/{userId}/reset-password", () => {
+  test("manageUsers権限が無いと403", async () => {
+    mockCallerAsMember();
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/users/{userId}/reset-password",
+        httpMethod: "POST",
+        pathParameters: { userId: "u3" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(403);
+    expect(cognitoMock.commandCalls(AdminSetUserPasswordCommand)).toHaveLength(0);
+  });
+
+  test("manageUsers権限があれば新しい仮パスワードを発行する", async () => {
+    const target: User = {
+      userId: "u3",
+      loginId: "staff03",
+      displayName: "一般",
+      furigana: "いっぱん",
+      roleId: "role-member",
+      memberCategoryId: "cat-1",
+      notificationStatus: "ON",
+      permissions: allPermissionsOff,
+    };
+    mockCallerAsAdmin();
+    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u3" } }).resolves({ Item: target });
+    cognitoMock.on(AdminSetUserPasswordCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/users/{userId}/reset-password",
+        httpMethod: "POST",
+        pathParameters: { userId: "u3" },
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as { temporaryPassword: string };
+    expect(typeof body.temporaryPassword).toBe("string");
+    expect(body.temporaryPassword.length).toBeGreaterThanOrEqual(10);
+
+    const setPasswordCall = cognitoMock.commandCalls(AdminSetUserPasswordCommand)[0].args[0].input;
+    expect(setPasswordCall.Username).toBe("staff03");
+    expect(setPasswordCall.Permanent).toBe(false);
+  });
+
+  test("存在しないユーザーは404", async () => {
+    mockCallerAsAdmin();
+    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "unknown" } }).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/users/{userId}/reset-password",
+        httpMethod: "POST",
+        pathParameters: { userId: "unknown" },
+      }),
     );
 
     expect(res.statusCode).toBe(404);

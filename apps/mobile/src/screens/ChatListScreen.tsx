@@ -2,9 +2,10 @@ import { useState } from "react";
 import { View, Text, TextInput, FlatList, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockChatRooms, mockMembers, mockMessages, mockCurrentUserId } from "@on-connect/shared";
+import { mockChatRooms, mockMembers, mockMessages } from "@on-connect/shared";
 import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatList">;
 
@@ -14,12 +15,13 @@ type Props = NativeStackScreenProps<ChatStackParamList, "ChatList">;
  * TODO: AppSync側にメッセージ検索クエリを実装し、サーバーサイド検索に置き換える（現状はダミーデータ表示）。
  */
 export function ChatListScreen({ navigation }: Props) {
+  const { currentUserId } = useAuth();
   const [query, setQuery] = useState("");
 
   const rooms = mockChatRooms
-    .filter((room) => room.memberUserIds.includes(mockCurrentUserId))
+    .filter((room) => room.memberUserIds.includes(currentUserId ?? ""))
     .map((room) => {
-      const otherMemberId = room.memberUserIds.find((id) => id !== mockCurrentUserId);
+      const otherMemberId = room.memberUserIds.find((id) => id !== currentUserId);
       const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
       const displayName = room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "不明なメンバー";
       const roomMessages = mockMessages[room.roomId] ?? [];

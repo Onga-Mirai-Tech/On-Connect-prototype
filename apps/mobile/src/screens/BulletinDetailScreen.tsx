@@ -8,7 +8,6 @@ import {
   mockBulletinComments,
   mockBulletinCategories,
   mockMembers,
-  mockCurrentUserId,
   toggleReaction,
   type BulletinPost,
   type BulletinComment,
@@ -16,6 +15,7 @@ import {
 import type { BulletinStackParamList } from "../navigation/AppNavigator";
 import { ReactionBar } from "../components/ReactionBar";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 type Props = NativeStackScreenProps<BulletinStackParamList, "BulletinDetail">;
 
@@ -28,6 +28,7 @@ const categoryName = (categoryId: string | undefined) =>
  * TODO: GET /bulletin-posts/{postId} 、コメントAPIに接続する（現状はダミーデータ表示）
  */
 export function BulletinDetailScreen({ route, navigation }: Props) {
+  const { currentUserId } = useAuth();
   const { postId } = route.params;
   const initialPost = mockBulletinPosts.find((p) => p.postId === postId);
 
@@ -47,7 +48,7 @@ export function BulletinDetailScreen({ route, navigation }: Props) {
 
   const handleToggleReaction = (emoji: string) => {
     // TODO: 掲示板リアクションAPIに接続する
-    setPost((prev) => (prev ? { ...prev, reactions: toggleReaction(prev.reactions, emoji, mockCurrentUserId) } : prev));
+    setPost((prev) => (prev ? { ...prev, reactions: toggleReaction(prev.reactions, emoji, currentUserId ?? "") } : prev));
   };
 
   const handleAddComment = () => {
@@ -58,7 +59,7 @@ export function BulletinDetailScreen({ route, navigation }: Props) {
       {
         commentId: `local-${Date.now()}`,
         postId,
-        authorId: mockCurrentUserId,
+        authorId: currentUserId ?? "",
         body: commentBody,
         createdAt: new Date().toISOString(),
       },
@@ -104,7 +105,7 @@ export function BulletinDetailScreen({ route, navigation }: Props) {
             )}
           </View>
           <View style={styles.reactionRow}>
-            <ReactionBar reactions={post.reactions} currentUserId={mockCurrentUserId} onToggle={handleToggleReaction} />
+            <ReactionBar reactions={post.reactions} currentUserId={currentUserId ?? ""} onToggle={handleToggleReaction} />
           </View>
           <Text style={styles.commentsHeading}>コメント（{comments.length}）</Text>
         </View>

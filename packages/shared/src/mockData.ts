@@ -91,6 +91,7 @@ const allPermissionsOff: RolePermissions = {
 export const mockMembers: User[] = [
   {
     userId: "user-01",
+    loginId: "staff01",
     displayName: "佐藤 陽子",
     furigana: "さとう ようこ",
     email: "sato@on-connect.example.com",
@@ -101,6 +102,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-02",
+    loginId: "staff02",
     displayName: "高橋 誠",
     furigana: "たかはし まこと",
     email: "takahashi@on-connect.example.com",
@@ -111,6 +113,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-03",
+    loginId: "staff03",
     displayName: "田中 美咲",
     furigana: "たなか みさき",
     email: "tanaka@on-connect.example.com",
@@ -122,6 +125,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-04",
+    loginId: "staff04",
     displayName: "鈴木 健太",
     furigana: "すずき けんた",
     email: "suzuki@on-connect.example.com",
@@ -133,6 +137,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-05",
+    loginId: "staff05",
     displayName: "伊藤 有紀",
     furigana: "いとう ゆき",
     email: "ito@on-connect.example.com",
@@ -144,6 +149,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-06",
+    loginId: "staff06",
     displayName: "渡辺 舞",
     furigana: "わたなべ まい",
     email: "watanabe@on-connect.example.com",
@@ -155,6 +161,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-07",
+    loginId: "staff07",
     displayName: "山本 大輔",
     furigana: "やまもと だいすけ",
     email: "yamamoto@on-connect.example.com",
@@ -165,6 +172,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-08",
+    loginId: "staff08",
     displayName: "中村 恵子",
     furigana: "なかむら けいこ",
     email: "nakamura@on-connect.example.com",
@@ -175,6 +183,7 @@ export const mockMembers: User[] = [
   },
   {
     userId: "user-09",
+    loginId: "staff09",
     displayName: "小林 直樹",
     furigana: "こばやし なおき",
     email: "kobayashi@on-connect.example.com",

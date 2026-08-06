@@ -3,6 +3,7 @@ import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { GetCommand, PutCommand, ScanCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import type { MemberCategory, Role, RolePermissions, User } from "@on-connect/shared";
 import { requirePermission } from "../common/authz";
+import { createCognitoUser, deleteCognitoUser, getCognitoUserStatus, reissueTemporaryPassword } from "../common/cognito";
 import { docClient, isTableEmpty } from "../common/dynamo";
 import { HttpError, getCurrentUserId, handleRequest, jsonResponse, parseJsonBody, requireParam } from "../common/http";
 
@@ -41,6 +42,10 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       if (httpMethod === "PUT") return updateUser(userId, event);
       if (httpMethod === "DELETE") return deleteUser(userId, event);
     }
+    if (resource === "/users/{userId}/reset-password") {
+      const userId = requireParam(event, "userId");
+      if (httpMethod === "POST") return resetUserPassword(userId, event);
+    }
     if (resource === "/roles") {
       if (httpMethod === "GET") return listRoles();
       if (httpMethod === "POST") return createRole(event);
@@ -69,9 +74,20 @@ export const handler: APIGatewayProxyHandler = async (event) =>
 // Users
 // ---------------------------------------------------------------------------
 
+/**
+ * ログイン状況（loginStatus）はDynamoDBには保存せず、一覧取得のたびにCognitoへ都度問い合わせて付加する
+ * （この事業者の規模＝数十名なら問題にならない）。詳細取得(getUser)には付けない。
+ */
 async function listUsers() {
   const result = await docClient.send(new ScanCommand({ TableName: USERS_TABLE_NAME }));
-  return jsonResponse(200, result.Items ?? []);
+  const users = (result.Items as User[] | undefined) ?? [];
+  const withLoginStatus = await Promise.all(
+    users.map(async (user) => ({
+      ...user,
+      loginStatus: user.loginId ? ((await getCognitoUserStatus(user.loginId)) ?? "UNPROVISIONED") : "UNPROVISIONED",
+    })),
+  );
+  return jsonResponse(200, withLoginStatus);
 }
 
 async function getUser(userId: string) {
@@ -80,6 +96,11 @@ async function getUser(userId: string) {
   return jsonResponse(200, user);
 }
 
+/**
+ * 職員を追加する＝Cognitoアカウント作成とDynamoDBへのプロフィール保存を1回の呼び出しで行う（Phase 8a）。
+ * userIdは呼び出し側が指定するのではなく、Cognitoが発行したsubをそのまま使う。
+ * DynamoDB書き込みが失敗した場合はCognito側のアカウントも削除し、不整合を残さない。
+ */
 async function createUser(event: APIGatewayProxyEvent) {
   // Usersテーブルが空(=組織初期セットアップ前)の場合に限り、権限チェック無しで最初の1人を作成できる。
   // それ以外は管理者(manageUsers権限)のみが新規ユーザーを作成できる。
@@ -87,29 +108,54 @@ async function createUser(event: APIGatewayProxyEvent) {
     await requirePermission(event, "manageUsers", USERS_TABLE_NAME);
   }
 
-  const input = parseJsonBody<User>(event);
-  // userIdはCognitoの発行するsubと一致させる想定のため、作成時は呼び出し側から明示的に指定する。
-  for (const field of ["userId", "displayName", "furigana", "email", "roleId", "memberCategoryId"] as const) {
+  const input = parseJsonBody<Omit<User, "userId">>(event);
+  for (const field of ["loginId", "displayName", "furigana", "roleId", "memberCategoryId"] as const) {
     if (!input[field]) throw new HttpError(400, `${field} は必須です`);
   }
 
-  const existing = await fetchUser(input.userId);
-  if (existing) throw new HttpError(409, "このuserIdは既に登録されています");
+  const existing = await docClient.send(
+    new ScanCommand({
+      TableName: USERS_TABLE_NAME,
+      FilterExpression: "loginId = :loginId",
+      ExpressionAttributeValues: { ":loginId": input.loginId },
+      ProjectionExpression: "userId",
+    }),
+  );
+  if ((existing.Items ?? []).length > 0) throw new HttpError(409, "このログインIDは既に使用されています");
+
+  const { sub, temporaryPassword } = await createCognitoUser(input.loginId, input.displayName);
 
   const user: User = {
-    userId: input.userId,
+    userId: sub,
+    loginId: input.loginId,
     displayName: input.displayName,
     furigana: input.furigana,
-    email: input.email,
     roleId: input.roleId,
     memberCategoryId: input.memberCategoryId,
     notificationStatus: input.notificationStatus ?? "ON",
     permissions: input.permissions ?? ALL_PERMISSIONS_OFF,
+    ...(input.email ? { email: input.email } : {}),
     ...(input.className ? { className: input.className } : {}),
   };
 
-  await docClient.send(new PutCommand({ TableName: USERS_TABLE_NAME, Item: user }));
-  return jsonResponse(201, user);
+  try {
+    await docClient.send(new PutCommand({ TableName: USERS_TABLE_NAME, Item: user }));
+  } catch (err) {
+    await deleteCognitoUser(input.loginId);
+    throw err;
+  }
+
+  return jsonResponse(201, { user, temporaryPassword });
+}
+
+async function resetUserPassword(userId: string, event: APIGatewayProxyEvent) {
+  await requirePermission(event, "manageUsers", USERS_TABLE_NAME);
+
+  const current = await fetchUser(userId);
+  if (!current) throw new HttpError(404, "ユーザーが見つかりません");
+
+  const temporaryPassword = await reissueTemporaryPassword(current.loginId);
+  return jsonResponse(200, { temporaryPassword });
 }
 
 async function updateUser(userId: string, event: APIGatewayProxyEvent) {

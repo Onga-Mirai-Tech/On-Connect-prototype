@@ -6,10 +6,10 @@ import {
   mockMemberCategories,
   mockRoles,
   mockChatRooms,
-  mockCurrentUserId,
   memberMatchesQuery,
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 /**
  * メンバー一覧画面（下部タブ）
@@ -18,6 +18,7 @@ import { colors } from "../theme/colors";
  * TODO: GET /users からメンバー一覧を取得する（現状はダミーデータ表示）。
  */
 export function MembersPage() {
+  const { currentUserId } = useAuth();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
 
@@ -27,7 +28,7 @@ export function MembersPage() {
   const handleChat = (memberId: string) => {
     // 既存の1対1ルームがあればそれを開き、無ければ仮のルームIDへ遷移する
     const existingRoom = mockChatRooms.find(
-      (r) => !r.isGroup && r.memberUserIds.includes(mockCurrentUserId) && r.memberUserIds.includes(memberId),
+      (r) => !r.isGroup && r.memberUserIds.includes(currentUserId ?? "") && r.memberUserIds.includes(memberId),
     );
     navigate(`/chat/${existingRoom?.roomId ?? `dm-${memberId}`}`);
   };
@@ -66,7 +67,7 @@ export function MembersPage() {
           <h3 style={{ fontSize: 13, color: colors.textMuted }}>{group.role.name}</h3>
           <ul style={{ listStyle: "none", padding: 0 }}>
             {group.members.map((member) => {
-              const isSelf = member.userId === mockCurrentUserId;
+              const isSelf = member.userId === currentUserId;
               return (
                 <li
                   key={member.userId}

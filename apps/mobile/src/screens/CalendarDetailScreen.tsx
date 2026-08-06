@@ -8,11 +8,11 @@ import {
   mockCalendarEvents,
   mockCalendarCategories,
   mockMembers,
-  mockCurrentUserId,
   buildIcsForEvent,
 } from "@on-connect/shared";
 import type { CalendarStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 type Props = NativeStackScreenProps<CalendarStackParamList, "CalendarDetail">;
 
@@ -34,6 +34,7 @@ const formatRange = (startAt: string, endAt: string) => {
  * TODO: GET/DELETE /calendar-events/{eventId} をAPIに接続する（現状はダミーデータ表示）
  */
 export function CalendarDetailScreen({ route, navigation }: Props) {
+  const { currentUserId } = useAuth();
   const { eventId } = route.params;
   const [event] = useState(() => mockCalendarEvents.find((e) => e.eventId === eventId));
 
@@ -45,7 +46,7 @@ export function CalendarDetailScreen({ route, navigation }: Props) {
     );
   }
 
-  const isOwnEvent = event.authorId === mockCurrentUserId;
+  const isOwnEvent = event.authorId === currentUserId;
 
   const handleDelete = () => {
     Alert.alert(

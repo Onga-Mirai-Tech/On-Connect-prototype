@@ -32,11 +32,15 @@ export interface MemberCategory {
 }
 
 export interface User {
+  /** CognitoのsubをそのままDynamoDBのPKとして使う */
   userId: string;
+  /** Cognitoのusername（ログイン時に入力するID、例: "staff01"）。管理者がアカウント発行時に付与する */
+  loginId: string;
   displayName: string;
   /** ふりがな（ひらがな表記）。氏名でのひらがな検索・五十音順ソートに使用する。 */
   furigana: string;
-  email: string;
+  /** 小規模事業者ではメンバー個人にメールアドレスを配布していないことが多いため任意項目（ログインには使わない） */
+  email?: string;
   roleId: string;
   memberCategoryId: string;
   notificationStatus: NotificationStatus;

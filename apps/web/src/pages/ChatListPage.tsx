@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { UserPlus, Users, User, Search } from "lucide-react";
-import { mockChatRooms, mockMembers, mockMessages, mockCurrentUserId } from "@on-connect/shared";
+import { mockChatRooms, mockMembers, mockMessages } from "@on-connect/shared";
+import { useAuth } from "../context/AuthContext";
 
 /**
  * チャット一覧画面（7章 3番）：1対1／グループチャットの一覧、既読／未読表示
@@ -10,12 +11,13 @@ import { mockChatRooms, mockMembers, mockMessages, mockCurrentUserId } from "@on
  * TODO: AppSync側にメッセージ検索クエリを実装し、サーバーサイド検索に置き換える。
  */
 export function ChatListPage() {
+  const { currentUserId } = useAuth();
   const [query, setQuery] = useState("");
 
   const rooms = mockChatRooms
-    .filter((room) => room.memberUserIds.includes(mockCurrentUserId))
+    .filter((room) => room.memberUserIds.includes(currentUserId ?? ""))
     .map((room) => {
-      const otherMemberId = room.memberUserIds.find((id) => id !== mockCurrentUserId);
+      const otherMemberId = room.memberUserIds.find((id) => id !== currentUserId);
       const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
       const displayName = room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "不明なメンバー";
       const roomMessages = mockMessages[room.roomId] ?? [];

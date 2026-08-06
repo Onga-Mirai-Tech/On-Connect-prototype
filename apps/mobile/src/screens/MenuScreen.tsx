@@ -4,6 +4,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { ComponentProps } from "react";
 import type { MenuStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
+import { useAuth } from "../context/AuthContext";
 
 type Props = NativeStackScreenProps<MenuStackParamList, "MenuHome">;
 
@@ -21,6 +22,8 @@ const menuItems: { to: keyof MenuStackParamList; label: string; icon: IoniconNam
  * 管理者機能はブラウザ版限定の既存方針を維持し、モバイル版には設けない。
  */
 export function MenuScreen({ navigation }: Props) {
+  const { signOut } = useAuth();
+
   return (
     <View style={styles.container}>
       <FlatList
@@ -33,6 +36,12 @@ export function MenuScreen({ navigation }: Props) {
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
         )}
+        ListFooterComponent={
+          <Pressable onPress={() => signOut()} style={styles.signOutRow}>
+            <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+            <Text style={styles.signOutLabel}>サインアウト</Text>
+          </Pressable>
+        }
       />
     </View>
   );
@@ -49,4 +58,15 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.surface,
   },
   label: { flex: 1, fontWeight: "700" },
+  signOutRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.surface,
+    borderRadius: 12,
+  },
+  signOutLabel: { color: colors.danger, fontWeight: "700" },
 });

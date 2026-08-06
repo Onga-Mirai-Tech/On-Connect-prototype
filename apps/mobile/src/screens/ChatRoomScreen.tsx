@@ -6,7 +6,6 @@ import {
   mockChatRooms,
   mockMembers,
   mockMessages,
-  mockCurrentUserId,
   toggleReaction,
   type Message,
 } from "@on-connect/shared";
@@ -14,6 +13,7 @@ import type { ChatStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
+import { useAuth } from "../context/AuthContext";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatRoom">;
 
@@ -28,9 +28,10 @@ const mentionPattern = /@([^\s@]*)$/;
  * TODO: AppSyncのクエリ・ミューテーション・サブスクリプションに置き換える（現状はダミーデータ表示）
  */
 export function ChatRoomScreen({ route }: Props) {
+  const { currentUserId } = useAuth();
   const { roomId } = route.params;
   const room = mockChatRooms.find((r) => r.roomId === roomId);
-  const otherMemberId = room?.memberUserIds.find((id) => id !== mockCurrentUserId);
+  const otherMemberId = room?.memberUserIds.find((id) => id !== currentUserId);
   const otherMember = mockMembers.find((m) => m.userId === otherMemberId);
   const roomTitle = room ? (room.isGroup ? room.name ?? "グループ" : otherMember?.displayName ?? "") : roomId;
   const participantNames = room?.isGroup ? room.memberUserIds.map((id) => memberName(id)).join("、") : "";
@@ -41,7 +42,7 @@ export function ChatRoomScreen({ route }: Props) {
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
 
   const roomMembers = mockMembers.filter(
-    (m) => room?.memberUserIds.includes(m.userId) && m.userId !== mockCurrentUserId,
+    (m) => room?.memberUserIds.includes(m.userId) && m.userId !== currentUserId,
   );
   const mentionMatch = mentionPattern.exec(body);
 
@@ -60,9 +61,9 @@ export function ChatRoomScreen({ route }: Props) {
       {
         messageId: `local-${Date.now()}`,
         roomId,
-        senderId: mockCurrentUserId,
+        senderId: currentUserId ?? "",
         body,
-        readByUserIds: [mockCurrentUserId],
+        readByUserIds: [currentUserId ?? ""],
         status: "sent",
         forceNotify,
         mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
@@ -83,7 +84,7 @@ export function ChatRoomScreen({ route }: Props) {
     // TODO: AppSyncのミューテーションでリアクションを永続化する
     setMessages((prev) =>
       prev.map((m) =>
-        m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, mockCurrentUserId) } : m,
+        m.messageId === messageId ? { ...m, reactions: toggleReaction(m.reactions, emoji, currentUserId ?? "") } : m,
       ),
     );
   };
@@ -130,7 +131,7 @@ export function ChatRoomScreen({ route }: Props) {
         keyExtractor={(item) => item.messageId}
         ListEmptyComponent={<Text>メッセージはまだありません。</Text>}
         renderItem={({ item }) => {
-          const isSelf = item.senderId === mockCurrentUserId;
+          const isSelf = item.senderId === currentUserId;
           return (
             <View style={[styles.bubbleWrap, { alignItems: isSelf ? "flex-end" : "flex-start" }]}>
               {room?.isGroup && !isSelf && <Text style={styles.senderName}>{memberName(item.senderId)}</Text>}
@@ -160,7 +161,7 @@ export function ChatRoomScreen({ route }: Props) {
               <View style={styles.reactionRow}>
                 <ReactionBar
                   reactions={item.reactions}
-                  currentUserId={mockCurrentUserId}
+                  currentUserId={currentUserId ?? ""}
                   onToggle={(emoji) => handleToggleReaction(item.messageId, emoji)}
                 />
               </View>
