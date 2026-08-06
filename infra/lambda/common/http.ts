@@ -10,10 +10,17 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * defaultCorsPreflightOptionsはOPTIONSプリフライトのみを処理するため、
+ * Lambda proxy統合の実レスポンス（GET/POST等）にはここで明示的にCORSヘッダーを付与する必要がある
+ * （付与しないとブラウザ側は実際のステータスに関わらず「CORSエラー」として弾く）。
+ */
+const CORS_HEADERS = { "Access-Control-Allow-Origin": "*" };
+
 export function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
     body: JSON.stringify(body),
   };
 }
@@ -27,7 +34,7 @@ export function rawResponse(
 ): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: { "Content-Type": contentType, ...extraHeaders },
+    headers: { "Content-Type": contentType, ...CORS_HEADERS, ...extraHeaders },
     body,
   };
 }

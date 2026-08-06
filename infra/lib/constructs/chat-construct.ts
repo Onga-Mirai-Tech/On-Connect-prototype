@@ -116,7 +116,12 @@ export class ChatConstruct extends Construct {
     messagesDS.createResolver("SendMessageResolver", {
       typeName: "Mutation",
       fieldName: "sendMessage",
-      requestMappingTemplate: appsync.MappingTemplate.fromString(`{
+      requestMappingTemplate: appsync.MappingTemplate.fromString(`#if($util.isNull($ctx.args.input.scheduledAt))
+#set($status = "sent")
+#else
+#set($status = "scheduled")
+#end
+{
   "version": "2018-05-29",
   "operation": "PutItem",
   "key": {
@@ -128,7 +133,7 @@ export class ChatConstruct extends Construct {
     "body": $util.dynamodb.toDynamoDBJson($ctx.args.input.body),
     "attachmentKeys": $util.dynamodb.toDynamoDBJson($util.defaultIfNull($ctx.args.input.attachmentKeys, [])),
     "readByUserIds": $util.dynamodb.toDynamoDBJson([]),
-    "status": $util.dynamodb.toDynamoDBJson($util.isNull($ctx.args.input.scheduledAt) ? "sent" : "scheduled"),
+    "status": $util.dynamodb.toDynamoDBJson($status),
     "scheduledAt": $util.dynamodb.toDynamoDBJson($ctx.args.input.scheduledAt),
     "forceNotify": $util.dynamodb.toDynamoDBJson($util.defaultIfNull($ctx.args.input.forceNotify, false)),
     "mentionedUserIds": $util.dynamodb.toDynamoDBJson($util.defaultIfNull($ctx.args.input.mentionedUserIds, [])),

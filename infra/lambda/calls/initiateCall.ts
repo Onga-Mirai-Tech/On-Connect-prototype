@@ -11,6 +11,7 @@ import type { APIGatewayProxyHandler } from "aws-lambda";
 export const handler: APIGatewayProxyHandler = async (event) => {
   return {
     statusCode: 501,
+    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
     body: JSON.stringify({ message: "Not implemented yet", body: event.body }),
   };
 };

@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8完了）
+# On-Connect 実装進捗まとめ（〜2026-08-06時点、Phase 8完了・初回AWSデプロイ＋実機検証済み）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -32,9 +32,14 @@ Phase 8aの実装計画・決定事項は`/Users/ikkounobuyuki/.claude/plans/eff
 （スキーマ拡張＋リゾルバ新設）から着手した点が特徴（実装計画は
 `/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`に記録済み、8bの計画ファイルを
 8d用に上書きして再利用）。**これでPhase 8（Cognito認証・REST/AppSync接続）が全て完了した**。
-Phase 8a〜8dともに実際のCognitoへのデプロイをまだ行っていないため、本物のログイン動作・API疎通の
-確認はできていない点に注意（8a〜8dが一通り終わった段階でユーザーに確認の上デプロイする既定方針
-だったため、次回セッションでユーザーにデプロイの可否を確認すること）。
+Phase 8a〜8dともに実際のCognitoへのデプロイをまだ行っていなかったが、本セッションでユーザーの
+承認を得て`OnConnect-dev`スタックを初めて実際にAWSへデプロイし、初回管理者アカウント作成・
+ログイン・REST API疎通・AppSyncチャット（ルーム作成・送信・永続化・リアルタイム購読）まで
+一通り実機確認した（**これでPhase 8a〜8dの「未検証」が解消**、詳細は下記3章34.参照）。
+その過程で実装時には発覚していなかった本物のデプロイでしか顕在化しないバグを2件発見・修正済み
+（①REST Lambda共通ヘルパーがCORSヘッダーを実レスポンスに付与しておらずブラウザから見ると
+全リクエストがCORSエラーに見える、②チャットのSendMessage VTLリゾルバがJS風三項演算子を使っており
+AppSyncのVTLでは構文エラーになる）。
 
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
@@ -75,16 +80,24 @@ Phase 8a〜8dともに実際のCognitoへのデプロイをまだ行っていな
 ### 現在のコミット状況
 Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
 Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決定事項の記録＋Phase 8a（3章30.）＋
-Phase 8b（3章31.）＋Phase 8c（3章32.）は**コミット済み・pushもユーザー指示で完了済み**
-（コミットハッシュ`3c67a3b`まで、`git log`で確認すること）。Phase 8d（3章33.、この本ファイルの
-更新も含む）は**未コミット**
-（次回セッション開始時に`git status`で確認し、ユーザーに確認の上コミット・pushすること）。
+Phase 8b（3章31.）＋Phase 8c（3章32.）＋Phase 8d（3章33.）は**コミット済み・pushも完了済み**
+（コミットハッシュ`382a91b`まで、`git log`で確認すること）。本セッションでの初回デプロイ実地検証中に
+発見・修正したCORS/VTLバグ（3章34.、`infra/lambda/common/http.ts`・`infra/lambda/calls/initiateCall.ts`・
+`infra/lib/constructs/api-construct.ts`・`infra/lib/constructs/chat-construct.ts`・web/mobileの
+`chatClient.ts`）と本ファイルの更新は**未コミット**（次回セッション開始時に`git status`で確認し、
+ユーザーに確認の上コミット・pushすること）。
 
 ### AWSデプロイの状況
-**Phase 1〜3の変更はAWSにデプロイされていない**（ローカルの`npm test`・`cdk synth`のみで確認）。
-以前（このセッションより前）に一度`OnConnect-dev`をデプロイして実機確認したが、確認後に
-`cdk destroy`＋孤立したCognito User Poolの手動削除まで完了済みで、現在AWS上にリソースは無い。
-再デプロイする場合は必ずユーザーの明示的な承認を得ること（過去にAWS課金についての合意プロセスあり）。
+本セッションでユーザーの承認を得て`OnConnect-dev`スタックを`ap-northeast-1`（アカウント
+`978841974977`、SSOプロファイル`dev`）に初めてデプロイした。**現在AWS上にリソースが存在している**
+（Cognito・DynamoDB 15テーブル・AppSync・S3+CloudFront・EventBridge Scheduler・API Gateway一式）。
+初回管理者アカウント（`loginId: staff01`、Cognito `AdminCreateUser`＋DynamoDB Usersテーブルへの
+直接`put-item`で作成、`RolePermissions`は全項目`true`）を作成済み。動作確認用に一時的に作成した
+2人目のテストユーザー（`staff02`）・テストチャットルーム・テストメッセージは確認後に削除済みで、
+現在Usersテーブルには`staff01`（テスト管理者）のみが存在する。継続利用する場合は
+`staff01`のログインID・表示名を実運用向けに整理するか、追加の管理者アカウントを作成すること。
+**再デプロイ・スタック削除など今後のAWS操作も引き続き必ずユーザーの明示的な承認を得ること**
+（過去にAWS課金についての合意プロセスあり）。
 
 ---
 
@@ -504,6 +517,53 @@ Phase 8b（3章31.）＋Phase 8c（3章32.）は**コミット済み・pushも�
       ためログイン後の画面群は実地確認できず、型チェック・ビルド通過のみで確認）
     - **未検証**：実際のAppSyncに対するルーム一覧取得・作成・送信・購読・既読の動作。実デプロイが
       必要（8a〜8dが一通り完了したため、次はユーザーにデプロイの可否を確認するタイミング）
+34. **【初回AWSデプロイ＋Phase 8a〜8d実機検証】**：ユーザーの承認を得て`OnConnect-dev`スタックを
+    `ap-northeast-1`（アカウント`978841974977`）に初めてデプロイし、Phase 8a〜8dで「未検証」のまま
+    残っていた実際のCognito/API Gateway/AppSyncへの疎通を一通り確認した。
+    - **デプロイ手順**：`aws sso login --profile dev`→`cdk deploy --profile dev`。初回管理者は
+      API経由では作成できない（Phase 8a・3章30.で既述の通り、全APIルートがCognito認証必須のため
+      「テーブルが空なら」ガードが機能しない設計）ため、`aws cognito-idp admin-create-user`
+      （`UserAttributes`に`name`を指定する必要あり、後述）＋DynamoDB Usersテーブルへの直接
+      `put-item`（`Role`・`MemberCategory`もダミーで1件ずつ作成）で手動作成した
+    - **バグ①CORSヘッダー欠落（重大・全REST接続をブロック）**：`defaultCorsPreflightOptions`は
+      OPTIONSプリフライトのみにCORSヘッダーを付与し、Lambda proxy統合の実レスポンス（GET/POST等）
+      には付与しないというAPI Gateway CDKの仕様を見落としていたため、実際にブラウザで叩くと
+      ステータスに関わらず全リクエストが「CORSポリシーでブロック」される状態だった
+      （`curl`は素通りするため単体テスト・`cdk synth`・これまでのローカル確認では気づけなかった）。
+      `infra/lambda/common/http.ts`の`jsonResponse`/`rawResponse`に`Access-Control-Allow-Origin: *`
+      を追加して修正。あわせて、API Gateway自体がLambdaに到達せず返す401/403等
+      （トークン期限切れ時などに典型）にもCORSヘッダーが無くブラウザからは同じくCORSエラーに
+      見えることに気づき、`infra/lib/constructs/api-construct.ts`に`DEFAULT_4XX`/`DEFAULT_5XX`の
+      Gateway Responseへ明示的にCORSヘッダーを付与する設定を追加。スタブのまま`headers`を
+      持っていなかった`infra/lambda/calls/initiateCall.ts`（Phase 11待ちの音声通話）にも同様に追加
+    - **バグ②チャット送信VTLの構文エラー（AppSyncチャット送信が全滅）**：
+      `chat-construct.ts`の`SendMessageResolver`が
+      `$util.isNull($ctx.args.input.scheduledAt) ? "sent" : "scheduled"`というJS風三項演算子を
+      使っていたが、AppSyncのVTL（Apache Velocity）はこの構文をサポートしておらず
+      `Lexical error, Encountered: "?"`で全ての`sendMessage`呼び出しが失敗していた（`cdk synth`は
+      VTLの中身を実行しないため検出できず、実際にAppSyncへ送信して初めて発覚）。
+      `#if`/`#set`で事前に`$status`変数を計算してから参照する形に書き換えて修正
+    - **リアルタイム購読の検証で分かった注意点（コード修正なし、知見として記録）**：
+      `onMessageSent`/`onMessageRead`は`@aws_subscribe`ディレクティブによるAppSync標準の
+      自動配信で、専用リゾルバは無い。動作検証中、`sendMessage`をGraphQL選択セットの一部フィールド
+      （`readByUserIds`等の非null必須フィールド）を省略して呼ぶと、その回だけ購読側に
+      `Cannot return null for non-nullable type`エラーが飛ぶ（＝その時点でWS購読していた
+      全クライアントへの配信が失敗する）という挙動を確認した。アプリ本体の`chatClient.ts`は
+      常にフルフィールド（`MESSAGE_FIELDS`）を選択しているため実運用では問題ないが、
+      デバッグ目的で`sendMessage`を手動実行する際は必ずフルフィールドを選択すること。
+      また、`chatClient.ts`（web/mobile）の`subscribeToMessages`/`subscribeToReads`に
+      `error`ハンドラが無く、購読エラーが発生してもコンソールにすら出ず気づけなかったため、
+      `console.error`を出す`error`ハンドラを追加した（副産物の改善、挙動は変えていない）
+    - **確認済み**：Cognitoログイン（初回パスワード設定含む）、AdminPageでの実データ表示
+      （`テスト管理者`が実際にUsersテーブルから表示される）、REST API（Users/Roles等）の
+      取得・表示、AppSyncでのグループチャット作成（`createRoom`）・メッセージ送信
+      （`sendMessage`、DynamoDB Messagesテーブルへの永続化を確認）・リアルタイム購読
+      （別クライアントからの送信がリロード無しで即座に画面へ反映されることを確認）
+    - **未確認のまま残っているもの**：既読（`markMessageRead`）の実地動作、予約送信
+      （Phase 10対象）、Bulletin/Calendar/Shifts等REST接続の実データでの動作（Users/Roles以外は
+      未確認）、モバイル（Expo）での実機確認
+    - テスト：修正後`npm test --workspace infra`（101件）・`cdk synth`・
+      `npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）で確認
 
 ## 4. 現在のダミー登録ユーザーの設定
 
@@ -515,7 +575,7 @@ Phase 8b（3章31.）＋Phase 8c（3章32.）は**コミット済み・pushも�
 
 ## 5. 実装状況（本実装 vs スタブ）
 
-### 本実装済み（実際に動くロジック、ローカルテスト確認済み・AWS未デプロイ）
+### 本実装済み（実際に動くロジック、ローカルテスト確認済み。AWSデプロイ・実地検証状況は各項目に記載）
 - CDKインフラのリソース定義一式（Cognito、DynamoDB **15テーブル**、AppSync、S3+CloudFront、
   EventBridge Scheduler、API Gateway）
 - 通知ステータス毎朝7時自動リセット＋休日連動ロジック（`dailyNotificationReset.ts`、24.参照）
@@ -542,16 +602,20 @@ Phase 8b（3章31.）＋Phase 8c（3章32.）は**コミット済み・pushも�
   当日リマインド通知（`dailyReminder.ts`、28.参照）。単日・複数日イベントの判定、閲覧カテゴリー
   フィルタ、通知OFF除外まで実装・テスト済み
 - Cognito認証（Phase 8a、30.参照）。ログイン・初回パスワード設定・サインアウト、管理者による
-  アカウント発行・ログイン状況確認・パスワード再発行。**コードは実装済みだが実際のCognitoに
-  デプロイしておらず、本物のログイン成功/失敗の動作確認はまだできていない**
+  アカウント発行・ログイン状況確認・パスワード再発行。**本セッションで初めて実際のCognitoに
+  デプロイし、ログイン・初回パスワード設定の実地動作を確認済み**（34.参照。管理者によるアカウント
+  発行・パスワード再発行UI自体は未確認）
 - Users/Roles/MemberCategoriesのREST接続（Phase 8b、31.参照）。全CRUD（web）・全画面での参照（web/mobile）
-  を実装済み。**コードは実装済みだが実際のAPIへの疎通確認はまだできていない**
+  を実装済み。**本セッションで実際のAPIへの疎通（取得・表示）を確認済み**（34.参照。作成・更新・
+  削除の実地動作は未確認）
 - OrgLinks/BulletinCategories/BulletinPosts/CalendarCategories/CalendarEvents/DutyTypes/ShiftTypes/
   MemberDailyStatus/DailyNoteのREST接続（Phase 8c、32.参照）。**コードは実装済みだが実際のAPIへの
-  疎通確認はまだできていない**
+  疎通確認はまだできていない**（Users/Roles以外は34.の検証範囲外）
 - チャットのAppSync接続（Phase 8d、33.参照）。ルーム一覧取得・ルーム作成・メッセージ送信・購読・
   既読を実装（infra側にルーム一覧取得クエリ・ルーム作成mutationを新規追加）。
-  **コードは実装済みだが実際のAppSyncへの疎通確認はまだできていない**
+  **本セッションでルーム作成・メッセージ送信・DynamoDBへの永続化・リアルタイム購読の実地動作を
+  確認済み**（34.参照。既読`markMessageRead`の実地動作は未確認）。検証中に見つかった
+  VTL構文エラー（バグ②）は修正済み
 
 ### 未実装（TODOコメントあり、501スタブ等）
 - Messagesテーブル streams → EventBridge Scheduler の CreateSchedule/DeleteSchedule（予約送信の実装、

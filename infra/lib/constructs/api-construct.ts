@@ -47,6 +47,16 @@ export class ApiConstruct extends Construct {
       },
     });
 
+    // API Gatewayが認可エラー等でLambdaに到達せず自前で返すレスポンス（401/403等）には
+    // defaultCorsPreflightOptionsのCORS設定が効かず、ブラウザからは実際のエラーがCORSエラーとして
+    // 見えてしまう（トークン期限切れ時に典型）。DEFAULT_4XX/5XXに明示的にCORSヘッダーを付与して回避する。
+    for (const type of [apigateway.ResponseType.DEFAULT_4XX, apigateway.ResponseType.DEFAULT_5XX]) {
+      this.restApi.addGatewayResponse(`GatewayResponse-${type.responseType}`, {
+        type,
+        responseHeaders: { "Access-Control-Allow-Origin": "'*'" },
+      });
+    }
+
     const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, "Authorizer", {
       cognitoUserPools: [props.userPool],
     });

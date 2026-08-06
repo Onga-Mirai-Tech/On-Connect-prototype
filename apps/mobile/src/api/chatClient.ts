@@ -127,6 +127,7 @@ export const chatClient = {
         next: ({ data }) => {
           if (data?.onMessageSent) onNext(data.onMessageSent);
         },
+        error: (err) => console.error("subscribeToMessages error", err),
       });
     return () => sub.unsubscribe();
   },
@@ -142,6 +143,7 @@ export const chatClient = {
         next: ({ data }) => {
           if (data?.onMessageRead) onNext(data.onMessageRead);
         },
+        error: (err) => console.error("subscribeToReads error", err),
       });
     return () => sub.unsubscribe();
   },
