@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-07時点、Phase 8完了・初回AWSデプロイ＋web/mobile実機検証済み）
+# On-Connect 実装進捗まとめ（〜2026-08-07時点、Phase 9完了・デプロイ済み）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -39,7 +39,28 @@ Phase 8a〜8dともに実際のCognitoへのデプロイをまだ行っていな
 その過程で実装時には発覚していなかった本物のデプロイでしか顕在化しないバグを2件発見・修正済み
 （①REST Lambda共通ヘルパーがCORSヘッダーを実レスポンスに付与しておらずブラウザから見ると
 全リクエストがCORSエラーに見える、②チャットのSendMessage VTLリゾルバがJS風三項演算子を使っており
-AppSyncのVTLでは構文エラーになる）。
+AppSyncのVTLでは構文エラーになる）。**この初回デプロイ後のAWSリソース（`OnConnect-dev`）は
+destroyせず、そのまま起動状態で残している**（以降のセッションもこのdev環境に対して開発を続ける想定）。
+続くセッションで、実機確認中に発覚した2件のバグ（カテゴリー系プルダウンの初期値が古いまま残る問題、
+シフト月表示の日次ループ取得がLambda同時実行数上限に達し500エラーになる問題）と、モバイル版の
+Expo Go非互換・ログイン直後に古いモックデータが一瞬表示される問題を修正した（コミット`0720bd9`・
+`8ae54e9`、詳細はこのファイルには未記載・`git log`で参照）。
+
+その後、シフト管理画面の左列固定・自分の行ハイライト表示・カレンダー月表示のドット→予定タイトル表示化
+（モバイル版のみ、Web版は既に予定タイトル表示だった）というUI改善を実施（コミット`fa53dcd`）。
+続けて**Phase 9（リアクション/コメントの永続化）**に着手・完了した：チャットメッセージ・掲示板投稿の
+絵文字リアクション、掲示板のコメントは従来ローカルstateのみで画面リロードで消えていたのを、
+新規`BulletinCommentsTable`＋REST 2エンドポイント（コメントCRUD・投稿リアクショントグル）、
+および**このプロジェクト初のLambda裏付けAppSyncリゾルバ**（`toggleMessageReaction`、
+チャットメッセージのリアクショントグルはread-modify-writeが必要でVTLだけでは表現できないため）で
+永続化した。あわせて`bulletin/notifyOnPost.ts`（従来`console.log`のみのスタブ）も実装した。
+投稿リアクションは`reactions`属性のみを更新し`updatedAt`は変更しない設計とすることで、
+リアクション操作が`notifyOnPost.ts`の「投稿更新通知」を誤発火させない工夫をしている
+（詳細は`/Users/ikkounobuyuki/.claude/plans/rosy-twirling-fox.md`に実装計画を記録済み）。
+infra全117テスト・`cdk synth`・web build・mobile tscが通過し、`OnConnect-dev`スタックへの
+再デプロイ（新テーブル1件・新Lambda2件・スキーマ変更、破壊的変更なし）とブラウザでの実機確認
+（コメント投稿・リアクショントグルがページリロード後も残ることを確認）まで完了している
+（コミット`941f633`）。**これでPhase 9が完了し、Phase 1〜9が全て完了した**。
 
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
@@ -69,28 +90,27 @@ AppSyncのVTLでは構文エラーになる）。
   build・mobile tscは通過済み。ただし**実際のAppSyncへの疎通確認はできていない**（デプロイ前のため、
   未接続時のダミーデータへのフォールバック動作のみ確認）。詳細は下記3章33.参照。
   **これでPhase 8（8a〜8d）が全て完了**
+- **Phase 9（リアクション/コメントの永続化）**：完了・`OnConnect-dev`へデプロイ済み、ブラウザで
+  実機確認済み（コメント投稿・リアクショントグルがリロード後も残ることを確認）。詳細は上記0章参照
+  （独立した3章番号は割り当てていない。実装計画は
+  `/Users/ikkounobuyuki/.claude/plans/rosy-twirling-fox.md`参照）
 
-### Phase 9〜12（未着手、優先順に記載。詳細は8章参照）
-- **Phase 9: リアクション/コメントの永続化**（掲示板コメントに加え、チャットのリアクションも
-  スキーマ未対応のためこのフェーズで合わせて対応する）
-- **Phase 10: 予約送信の実スケジューリング**（Phase 8後、既存インフラの実地検証が中心）
+### Phase 10〜12（未着手、優先順に記載。詳細は8章参照）
+- **Phase 10: 予約送信の実スケジューリング**（既存インフラの実地検証が中心）
 - **Phase 11: Amazon Chime SDK音声通話実装**（Phase 8後、実機検証にAWSデプロイが必要）
 - **Phase 12: 実際のモバイルプッシュ配信**（Phase 8後）
 
 ### 現在のコミット状況
-Phase1〜Phase3（休日・当番・シフトの統合管理まで）＋Phase3追加要望（9章・3章25.）＋Phase 4（3章26.）＋
-Phase 5（3章27.）＋Phase 6（3章28.）＋Phase 7（3章29.）＋Phase 8決定事項の記録＋Phase 8a（3章30.）＋
-Phase 8b（3章31.）＋Phase 8c（3章32.）＋Phase 8d（3章33.）は**コミット済み・pushも完了済み**
-（コミットハッシュ`382a91b`まで、`git log`で確認すること）。本セッションでの初回デプロイ実地検証中に
-発見・修正したCORS/VTLバグ（3章34.、`infra/lambda/common/http.ts`・`infra/lambda/calls/initiateCall.ts`・
-`infra/lib/constructs/api-construct.ts`・`infra/lib/constructs/chat-construct.ts`・web/mobileの
-`chatClient.ts`）と本ファイルの更新は**未コミット**（次回セッション開始時に`git status`で確認し、
-ユーザーに確認の上コミット・pushすること）。
+Phase 1〜9まで全て**コミット済み・pushも完了済み**（直近のコミットハッシュ`941f633`まで、
+`git log`で確認すること。この間の詳細な変更内容は本ファイルに書ききれていないコミットもあるため、
+必ず`git log`を一次情報として確認すること）。
 
 ### AWSデプロイの状況
-本セッションでユーザーの承認を得て`OnConnect-dev`スタックを`ap-northeast-1`（アカウント
-`978841974977`、SSOプロファイル`dev`）に初めてデプロイした。**現在AWS上にリソースが存在している**
-（Cognito・DynamoDB 15テーブル・AppSync・S3+CloudFront・EventBridge Scheduler・API Gateway一式）。
+`OnConnect-dev`スタックを`ap-northeast-1`（アカウント`978841974977`、SSOプロファイル`dev`）に
+デプロイ済みで**現在もAWS上にリソースが存在している**（Cognito・DynamoDB 16テーブル・AppSync・
+S3+CloudFront・EventBridge Scheduler・API Gateway一式。Phase 9で`BulletinCommentsTable`が
+追加され15→16に増加）。以降のセッションもこのdev環境に対してコードを変更したら
+都度`cdk deploy --profile dev --context envName=dev`で反映していく運用（destroyはしていない）。
 初回管理者アカウント（`loginId: staff01`、Cognito `AdminCreateUser`＋DynamoDB Usersテーブルへの
 直接`put-item`で作成、`RolePermissions`は全項目`true`）を作成済み。動作確認用に一時的に作成した
 2人目のテストユーザー（`staff02`）・テストチャットルーム・テストメッセージは確認後に削除済みで、
@@ -831,20 +851,20 @@ Phase 9〜12は互いに強い依存関係は無く、着手順はユーザー�
     から着手。`chatClient.ts`を新設しチャット4画面＋メンバー一覧の「チャット」ボタンを接続。
     グループ作成画面には従来存在しなかったメンバー個別選択UIも新設した。
     リアクション永続化のみPhase 9へ先送り（スキーマ未対応）
-  - **Phase 8全体を通して実際のAWS（Cognito/AppSync/API Gateway）へのデプロイはまだ一度も
-    行っていない**ため、本物のログイン・API疎通・リアルタイム購読の動作確認はできていない。
-    次のアクションはユーザーへのデプロイ可否確認
+  - **（この段落は執筆当初のもので現在は古い）** その後のセッションで`OnConnect-dev`スタックへの
+    初回デプロイ・実機確認が完了し、以降のセッションもこのdev環境に対して開発を続けている
+    （詳細は上記0章参照）。「デプロイ未実施」という前提はもう成り立たない
   `infra/lib/constructs/auth-construct.ts`のCognito設定・`infra/lambda/common/cognito.ts`・
   Web/Mobileの`AuthContext.tsx`は実装済み。詳細は
   `/Users/ikkounobuyuki/.claude/plans/effervescent-gliding-patterson.md`の
   「Phase 8a: 認証基盤 実装計画」、`/Users/ikkounobuyuki/.claude/plans/reactive-purring-castle.md`
   （Phase 8b計画を8d用に上書き再利用したもの。現在の内容は8d）、および本ファイル3章32.
   （Phase 8c、独立した計画ファイルなし）を参照。
-- **Phase 9: リアクション/コメントの永続化**（Phase 8後）
-  掲示板コメント用の新規DynamoDBテーブル・CRUD Lambdaを追加し、ローカルstateのみの
-  `toggleReaction`等をAPI接続に置き換える（**チャットのリアクションも対象**、`Message`型への
-  スキーマフィールド追加＋mutation新設が必要）。`bulletin/notifyOnPost.ts`（現状`console.log`のみの
-  スタブ）の実装もここに含める。投稿者・リアクションした人の識別に実ユーザーIDが要るためPhase 8後
+- **Phase 9: リアクション/コメントの永続化 — 完了**（詳細は上記0章参照）
+  掲示板コメント用の新規`BulletinCommentsTable`・REST 2エンドポイント（コメントCRUD・投稿リアクション
+  トグル）を追加し、ローカルstateのみだった`toggleReaction`等をAPI接続に置き換えた。チャットの
+  リアクションはこのプロジェクト初のLambda裏付けAppSyncリゾルバ（`toggleMessageReaction`）で対応。
+  `bulletin/notifyOnPost.ts`（従来`console.log`のみのスタブ）も実装した
 - **Phase 10: 予約送信の実スケジューリング**（Phase 8後）
   `onMessageStreamChange.ts`（Streams→EventBridge Scheduler登録）・`sendScheduled.ts`
   （実際の送信）は実装済みだがチャット未接続のため一度も実地検証されていない。Phase 8後にAppSync
