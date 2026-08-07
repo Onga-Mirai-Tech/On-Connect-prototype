@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, Switch, StyleSheet, FlatList } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { mockChatRooms, mockMessages, toggleReaction, type ChatRoom, type Message } from "@on-connect/shared";
-import type { ChatStackParamList } from "../navigation/AppNavigator";
+import type { ChatStackParamList, HomeTabParamList, RootStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
 import { chatClient } from "../api/chatClient";
+import { callClient } from "../api/callClient";
 
 type Props = NativeStackScreenProps<ChatStackParamList, "ChatRoom">;
 
@@ -31,7 +33,7 @@ function upsertMessage(messages: Message[], incoming: Message): Message[] {
  * Phase 8d：AppSyncのクエリ・ミューテーション・サブスクリプションに接続（失敗時はダミーデータに
  * フォールバック）。Phase 9：リアクションもAPIに接続。
  */
-export function ChatRoomScreen({ route }: Props) {
+export function ChatRoomScreen({ route, navigation }: Props) {
   const { currentUserId } = useAuth();
   const { members } = useOrgData();
   const { roomId } = route.params;
@@ -43,6 +45,7 @@ export function ChatRoomScreen({ route }: Props) {
   const [scheduledAt, setScheduledAt] = useState("");
   const [forceNotify, setForceNotify] = useState(false);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+  const [callError, setCallError] = useState<string | null>(null);
   const markingReadRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -152,9 +155,26 @@ export function ChatRoomScreen({ route }: Props) {
     }
   };
 
-  const handleCall = () => {
-    // TODO: POST /calls を呼び出し、Chime SDK Meeting/Attendee 情報を取得して発信する
-    // TODO: 発信中UI（自分が発信した側の画面）へ遷移する
+  const handleCall = async () => {
+    if (!otherMemberId || !currentUserId) return;
+    setCallError(null);
+    try {
+      const result = await callClient.initiateCall(otherMemberId);
+      const tabNavigation = navigation.getParent<BottomTabNavigationProp<HomeTabParamList>>();
+      const rootNavigation = tabNavigation?.getParent<NativeStackNavigationProp<RootStackParamList>>();
+      rootNavigation?.navigate("IncomingCall", {
+        role: "caller",
+        callId: result.callId,
+        calleeId: otherMemberId,
+        calleeName: otherMember?.displayName ?? "",
+        meetingJson: JSON.stringify(result.meeting),
+        attendeeJson: JSON.stringify(result.callerAttendee),
+        startTime: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("発信に失敗しました", err);
+      setCallError(err instanceof Error ? err.message : "発信に失敗しました");
+    }
   };
 
   const handleToggleReaction = async (messageId: string, emoji: string) => {
@@ -211,6 +231,7 @@ export function ChatRoomScreen({ route }: Props) {
           </Pressable>
         )}
       </View>
+      {callError && <Text style={styles.callErrorText}>{callError}</Text>}
       <FlatList
         style={styles.messages}
         data={messages}
@@ -314,6 +335,7 @@ const styles = StyleSheet.create({
   participantsText: { flex: 1, fontSize: 12, color: colors.textMuted },
   statusText: { fontSize: 12, color: colors.textMuted },
   callButton: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 0 },
+  callErrorText: { fontSize: 12, color: colors.danger, paddingHorizontal: 16, marginBottom: 4 },
   messages: { flex: 1, paddingHorizontal: 16 },
   bubbleWrap: { marginBottom: 8 },
   senderName: { fontSize: 11, color: colors.textMuted, marginBottom: 2 },

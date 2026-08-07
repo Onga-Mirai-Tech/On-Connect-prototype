@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users, AtSign, X } from "lucide-react";
 import { mockChatRooms, mockMessages, toggleReaction, type ChatRoom, type Message } from "@on-connect/shared";
 import { colors } from "../theme/colors";
@@ -8,6 +8,7 @@ import { MemberPicker } from "../components/MemberPicker";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
 import { chatClient } from "../api/chatClient";
+import { callClient } from "../api/callClient";
 
 /** 本文末尾の "@検索語" にマッチする（カーソルが末尾にある前提の簡易実装） */
 const mentionPattern = /@([^\s@]*)$/;
@@ -31,6 +32,7 @@ export function ChatRoomPage() {
   const { currentUserId } = useAuth();
   const { members } = useOrgData();
   const { roomId = "" } = useParams();
+  const navigate = useNavigate();
   const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
 
   const [room, setRoom] = useState<ChatRoom | undefined>(undefined);
@@ -39,6 +41,7 @@ export function ChatRoomPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [forceNotify, setForceNotify] = useState(false);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+  const [callError, setCallError] = useState<string | null>(null);
   const markingReadRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -142,8 +145,26 @@ export function ChatRoomPage() {
     setMentionedUserIds([]);
   };
 
-  const handleCall = () => {
-    // TODO: POST /calls を呼び出し、Chime SDK Meeting/Attendee を取得して発信画面へ遷移する
+  const handleCall = async () => {
+    if (!otherMemberId || !currentUserId) return;
+    setCallError(null);
+    try {
+      const result = await callClient.initiateCall(otherMemberId);
+      navigate("/calls/incoming", {
+        state: {
+          role: "caller",
+          callId: result.callId,
+          calleeId: otherMemberId,
+          calleeName: otherMember?.displayName ?? "",
+          meeting: result.meeting,
+          callerAttendee: result.callerAttendee,
+          startTime: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      console.error("発信に失敗しました", err);
+      setCallError(err instanceof Error ? err.message : "発信に失敗しました");
+    }
   };
 
   const handleCancelScheduled = async (messageId: string) => {
@@ -204,6 +225,7 @@ export function ChatRoomPage() {
           </button>
         )}
       </div>
+      {callError && <p style={{ color: colors.danger, fontSize: 12, margin: "4px 0" }}>{callError}</p>}
       <div style={{ flex: 1, overflowY: "auto", border: "1px solid #eee", borderRadius: 14, padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
         {messages.length === 0 && <p>メッセージはまだありません。</p>}
         {messages.map((m) => {

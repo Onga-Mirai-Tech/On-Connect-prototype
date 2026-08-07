@@ -1,0 +1,8 @@
+{
+  "name": "chime-audio-call",
+  "version": "1.0.0",
+  "description": "Amazon Chime SDK 音声通話のネイティブブリッジ（On-Connect Phase 11、iOS/Android、音声のみ）",
+  "main": "index.ts",
+  "types": "index.ts",
+  "license": "UNLICENSED"
+}

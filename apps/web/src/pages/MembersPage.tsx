@@ -6,6 +6,7 @@ import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
 import { chatClient } from "../api/chatClient";
+import { callClient } from "../api/callClient";
 
 /**
  * メンバー一覧画面（下部タブ）
@@ -18,6 +19,7 @@ export function MembersPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [creatingUserId, setCreatingUserId] = useState<string | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
 
   const categoryName = (categoryId: string) =>
     memberCategories.find((c) => c.categoryId === categoryId)?.name ?? "";
@@ -45,9 +47,25 @@ export function MembersPage() {
     }
   };
 
-  const handleCall = (memberName: string) => {
-    // TODO: POST /calls を呼び出しChime SDK Meetingを開始する（現状はデモ用の着信画面へ遷移）
-    navigate(`/calls/incoming?name=${encodeURIComponent(memberName)}`);
+  const handleCall = async (memberId: string, memberName: string) => {
+    setCallError(null);
+    try {
+      const result = await callClient.initiateCall(memberId);
+      navigate("/calls/incoming", {
+        state: {
+          role: "caller",
+          callId: result.callId,
+          calleeId: memberId,
+          calleeName: memberName,
+          meeting: result.meeting,
+          callerAttendee: result.callerAttendee,
+          startTime: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      console.error("発信に失敗しました", err);
+      setCallError(err instanceof Error ? err.message : "発信に失敗しました");
+    }
   };
 
   const filteredMembers = members.filter((m) => memberMatchesQuery(m, query));
@@ -73,6 +91,7 @@ export function MembersPage() {
           style={{ flex: 1 }}
         />
       </div>
+      {callError && <p style={{ color: colors.danger, fontSize: 12, margin: "4px 0" }}>{callError}</p>}
       {groups.length === 0 && <p>該当するメンバーが見つかりません。</p>}
       {groups.map((group) => (
         <div key={group.role.roleId} style={{ marginBottom: 16 }}>
@@ -116,7 +135,7 @@ export function MembersPage() {
                         <MessageCircle size={14} /> チャット
                       </button>
                       <button
-                        onClick={() => handleCall(member.displayName)}
+                        onClick={() => void handleCall(member.userId, member.displayName)}
                         style={{ display: "flex", alignItems: "center", gap: 4 }}
                       >
                         <Phone size={14} /> 通話

@@ -9,6 +9,7 @@ import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
 import { chatClient } from "../api/chatClient";
+import { callClient } from "../api/callClient";
 
 type Props = NativeStackScreenProps<MenuStackParamList, "Members">;
 
@@ -22,6 +23,7 @@ export function MembersScreen({ navigation }: Props) {
   const { members, roles, memberCategories } = useOrgData();
   const [query, setQuery] = useState("");
   const [creatingUserId, setCreatingUserId] = useState<string | null>(null);
+  const [callError, setCallError] = useState<string | null>(null);
 
   const categoryName = (categoryId: string) =>
     memberCategories.find((c) => c.categoryId === categoryId)?.name ?? "";
@@ -50,11 +52,25 @@ export function MembersScreen({ navigation }: Props) {
     }
   };
 
-  const handleCall = (memberName: string) => {
-    // TODO: POST /calls を呼び出しChime SDK Meetingを開始する（現状はデモ用の着信画面へ遷移）
-    const tabNavigation = navigation.getParent<BottomTabNavigationProp<HomeTabParamList>>();
-    const rootNavigation = tabNavigation?.getParent<NativeStackNavigationProp<RootStackParamList>>();
-    rootNavigation?.navigate("IncomingCall", { callerName: memberName });
+  const handleCall = async (memberId: string, memberName: string) => {
+    setCallError(null);
+    try {
+      const result = await callClient.initiateCall(memberId);
+      const tabNavigation = navigation.getParent<BottomTabNavigationProp<HomeTabParamList>>();
+      const rootNavigation = tabNavigation?.getParent<NativeStackNavigationProp<RootStackParamList>>();
+      rootNavigation?.navigate("IncomingCall", {
+        role: "caller",
+        callId: result.callId,
+        calleeId: memberId,
+        calleeName: memberName,
+        meetingJson: JSON.stringify(result.meeting),
+        attendeeJson: JSON.stringify(result.callerAttendee),
+        startTime: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("発信に失敗しました", err);
+      setCallError(err instanceof Error ? err.message : "発信に失敗しました");
+    }
   };
 
   const filteredMembers = members.filter((m) => memberMatchesQuery(m, query));
@@ -78,6 +94,7 @@ export function MembersScreen({ navigation }: Props) {
           onChangeText={setQuery}
         />
       </View>
+      {callError && <Text style={styles.callErrorText}>{callError}</Text>}
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.userId}
@@ -111,7 +128,7 @@ export function MembersScreen({ navigation }: Props) {
                   >
                     <Ionicons name="chatbubble-outline" size={18} color={colors.brandDark} />
                   </Pressable>
-                  <Pressable onPress={() => handleCall(item.displayName)} style={styles.actionButton}>
+                  <Pressable onPress={() => void handleCall(item.userId, item.displayName)} style={styles.actionButton}>
                     <Ionicons name="call-outline" size={18} color={colors.brandDark} />
                   </Pressable>
                 </View>
@@ -136,6 +153,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   searchInput: { flex: 1, paddingVertical: 10 },
+  callErrorText: { fontSize: 12, color: colors.danger, marginBottom: 8 },
   sectionTitle: { fontSize: 12, color: colors.textMuted, marginTop: 12, marginBottom: 4 },
   row: {
     flexDirection: "row",

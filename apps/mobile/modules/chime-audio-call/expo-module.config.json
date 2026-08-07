@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["ChimeAudioCallModule"]
+  },
+  "android": {
+    "modules": ["tech.ongamirai.onconnect.chimeaudiocall.ChimeAudioCallModule"]
+  }
+}

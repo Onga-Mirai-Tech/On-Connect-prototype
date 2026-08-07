@@ -1,0 +1,26 @@
+apply plugin: 'com.android.library'
+
+group = 'tech.ongamirai.onconnect'
+version = '1.0.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useDefaultAndroidSdkVersions()
+useExpoPublishing()
+
+android {
+  namespace "tech.ongamirai.onconnect.chimeaudiocall"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+}
+
+dependencies {
+  // Amazon Chime SDK for Android（音声のみのため映像コーデック用のamazon-chime-sdk-mediaは不要）。
+  // Maven Central公開版。バージョンは2026年8月時点の最新確認版（0.25.0）。ビルド時に最新版を
+  // 確認し、必要に応じて更新すること。
+  implementation 'software.aws.chimesdk:amazon-chime-sdk:0.25.0'
+}

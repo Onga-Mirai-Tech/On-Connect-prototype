@@ -19,6 +19,7 @@
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "aws-amplify": "^6.20.0",
+    "chime-audio-call": "file:./modules/chime-audio-call",
     "expo": "~51.0.0",
     "expo-file-system": "~17.0.1",
     "expo-notifications": "~0.28.16",

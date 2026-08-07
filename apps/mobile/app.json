@@ -17,7 +17,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "tech.ongamirai.onconnect",
       "infoPlist": {
-        "UIBackgroundModes": ["voip", "audio"]
+        "UIBackgroundModes": ["voip", "audio"],
+        "NSMicrophoneUsageDescription": "音声通話でマイクを使用します"
       }
     },
     "android": {

@@ -135,9 +135,25 @@ async function endCall(event: APIGatewayProxyEvent) {
       ? { durationSeconds: Math.max(0, Math.round((Date.parse(endTime) - Date.parse(input.startTime)) / 1000)) }
       : {}),
   };
-  await docClient.send(new PutCommand({ TableName: CALL_LOGS_TABLE_NAME, Item: callLog }));
 
-  return jsonResponse(200, callLog);
+  // 発信者側の応答待ちタイムアウト（missed）と着信者側の明示的な操作（declined/completed）が
+  // ほぼ同時に発生しうるため、最初の1回だけ書き込む（2回目以降は既存の記録をそのまま返す）
+  try {
+    await docClient.send(
+      new PutCommand({
+        TableName: CALL_LOGS_TABLE_NAME,
+        Item: callLog,
+        ConditionExpression: "attribute_not_exists(callId)",
+      }),
+    );
+    return jsonResponse(200, callLog);
+  } catch (err) {
+    if (err instanceof Error && err.name === "ConditionalCheckFailedException") {
+      const existing = await docClient.send(new GetCommand({ TableName: CALL_LOGS_TABLE_NAME, Key: { callId } }));
+      return jsonResponse(200, existing.Item as CallLog);
+    }
+    throw err;
+  }
 }
 
 async function fetchUser(userId: string): Promise<User | undefined> {

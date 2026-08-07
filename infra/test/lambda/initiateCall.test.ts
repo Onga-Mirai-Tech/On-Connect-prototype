@@ -248,4 +248,34 @@ describe("POST /calls/{callId}/end", () => {
     expect(res.statusCode).toBe(200);
     expect(ddbMock.commandCalls(PutCommand)).toHaveLength(1);
   });
+
+  test("2回目の呼び出し（発信者のタイムアウトと着信者の操作が競合するケース）は既存の記録を返す", async () => {
+    chimeMock.on(DeleteMeetingCommand).resolves({});
+    const conditionalError = new Error("conditional check failed");
+    conditionalError.name = "ConditionalCheckFailedException";
+    ddbMock.on(PutCommand).rejects(conditionalError);
+    const existingLog = {
+      callId: "call-1",
+      callerId: "caller-1",
+      calleeId: "callee-1",
+      startTime: "2026-08-07T00:00:00.000Z",
+      endTime: "2026-08-07T00:00:20.000Z",
+      status: "declined",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-CallLogs", Key: { callId: "call-1" } }).resolves({ Item: existingLog });
+
+    const res = await invoke(
+      endEvent({
+        body: JSON.stringify({
+          callerId: "caller-1",
+          calleeId: "callee-1",
+          startTime: "2026-08-07T00:00:00.000Z",
+          status: "missed",
+        }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(existingLog);
+  });
 });

@@ -1,8 +1,8 @@
-import { NavigationContainer, type NavigatorScreenParams } from "@react-navigation/native";
+import { NavigationContainer, createNavigationContainerRef, type NavigatorScreenParams } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
-import type { ComponentProps } from "react";
+import { useEffect, type ComponentProps } from "react";
 
 import { LoginScreen } from "../screens/LoginScreen";
 import { ChatListScreen } from "../screens/ChatListScreen";
@@ -24,6 +24,7 @@ import { MenuScreen } from "../screens/MenuScreen";
 import { HeaderStatus } from "./HeaderStatus";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
+import { callClient } from "../api/callClient";
 
 export type ChatStackParamList = {
   ChatList: undefined;
@@ -61,10 +62,35 @@ export type HomeTabParamList = {
   MenuTab: NavigatorScreenParams<MenuStackParamList> | undefined;
 };
 
+/**
+ * 通話画面（Phase 11）へのパラメータ。Web版のCallLocationState（apps/web/src/pages/IncomingCallPage.tsx）
+ * と同じ役割分担だが、meeting/attendeeはchime-audio-callネイティブモジュールへ渡すJSON文字列として保持する
+ * （発信側もPOST /calls応答をJSON.stringifyしてから渡す。apps/mobile/src/api/callClient.ts参照）。
+ */
+export type CallRouteParams =
+  | {
+      role: "caller";
+      callId: string;
+      calleeId: string;
+      calleeName: string;
+      meetingJson: string;
+      attendeeJson: string;
+      startTime: string;
+    }
+  | {
+      role: "callee";
+      callId: string;
+      callerId: string;
+      callerName: string;
+      meetingJson: string;
+      calleeAttendeeJson: string;
+      startTime: string;
+    };
+
 export type RootStackParamList = {
   Login: undefined;
   Home: NavigatorScreenParams<HomeTabParamList> | undefined;
-  IncomingCall: { callerName: string };
+  IncomingCall: CallRouteParams;
 };
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -175,15 +201,37 @@ function HomeTabs() {
   );
 }
 
+/** ルート未使用時（NavigationContainerの外）からも画面遷移できるよう、着信リスナー用に公開する（Phase 11）。 */
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
 /**
  * 未ログイン時はLogin画面のみ、ログイン中はHome/IncomingCallのみを登録する（Phase 8a）。
  * サインイン成功でAuthContextのcurrentUserIdが更新されると、この分岐が自動的に切り替わる。
+ * ログイン中は常時onIncomingCallを購読し、着信を受けたらどの画面を見ていても着信画面へ切り替える
+ * （Phase 11、Web版のrouter.tsxのRequireAuthと同じ役割）。
  */
 export function AppNavigator() {
   const { currentUserId } = useAuth();
 
+  useEffect(() => {
+    if (!currentUserId) return;
+    const unsubscribe = callClient.subscribeToIncomingCalls(currentUserId, (call) => {
+      if (!navigationRef.isReady()) return;
+      navigationRef.navigate("IncomingCall", {
+        role: "callee",
+        callId: call.callId,
+        callerId: call.callerId,
+        callerName: call.callerName,
+        meetingJson: call.meetingJson,
+        calleeAttendeeJson: call.calleeAttendeeJson,
+        startTime: new Date().toISOString(),
+      });
+    });
+    return unsubscribe;
+  }, [currentUserId]);
+
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
         {currentUserId ? (
           <>

@@ -1,5 +1,7 @@
-import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
+import { useEffect } from "react";
+import { createBrowserRouter, Navigate, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
+import { callClient } from "./api/callClient";
 import { HomeLayout } from "./pages/HomeLayout";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatListPage } from "./pages/ChatListPage";
@@ -20,9 +22,34 @@ import { AdminPage } from "./pages/AdminPage";
 import { ShiftManagementPage } from "./pages/ShiftManagementPage";
 import { MenuPage } from "./pages/MenuPage";
 
-/** 未ログイン時は/loginへリダイレクトする（Phase 8a）。認証状態解決中はApp.tsx側でローディング表示するため、ここではisLoadingを考慮しない。 */
+/**
+ * 未ログイン時は/loginへリダイレクトする（Phase 8a）。認証状態解決中はApp.tsx側でローディング表示するため、
+ * ここではisLoadingを考慮しない。
+ * ログイン中は常時onIncomingCallを購読し、着信を受けたら画面遷移する（Phase 11、どのページを見ていても
+ * 着信画面へ切り替わる。専用のプロバイダファイルは作らずここに寄せる）。
+ */
 function RequireAuth() {
   const { currentUserId } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const unsubscribe = callClient.subscribeToIncomingCalls(currentUserId, (call) => {
+      navigate("/calls/incoming", {
+        state: {
+          role: "callee",
+          callId: call.callId,
+          callerId: call.callerId,
+          callerName: call.callerName,
+          meetingJson: call.meetingJson,
+          calleeAttendeeJson: call.calleeAttendeeJson,
+          startTime: new Date().toISOString(),
+        },
+      });
+    });
+    return unsubscribe;
+  }, [currentUserId, navigate]);
+
   if (!currentUserId) return <Navigate to="/login" replace />;
   return <Outlet />;
 }
