@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-07時点、Phase 10完了・デプロイ済み）
+# On-Connect 実装進捗まとめ（〜2026-08-07時点、Phase 12完了・デプロイ済み）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -153,6 +153,82 @@ infra全117テスト・`cdk synth`・web build・mobile tscが通過し、`OnCon
   **これでPhase 11が完了し、Phase 1〜11が全て完了した**（残る検証はPhase 12着手前に
   改めて実施することが望ましい）。
 
+続けて**Phase 12（チャット・掲示板のファイル添付実装）**に着手し、コード実装を完了した
+（設計書5.2.1 / 5.3.2、ユーザー要望は8章参照）。着手前にコードベースを実地調査した結果、
+`S3AttachmentsBucket`・CloudFront distributionはプロビジョニング済みだったが、
+①S3アップロード・署名付きURL発行を行うLambdaコードが実際にはゼロだった、
+②CloudFront側の署名付きURL機構（`trustedKeyGroups`等）も未設定で、設計書が謳う配信方式が
+実装されていなかった（これが前セッションで指摘されていた点）、③`Message`/`BulletinPost`の
+`attachmentKeys?: string[]`は生のS3オブジェクトキー配列のみでファイル名・MIMEタイプ・サイズを
+保持しておらず、画像サムネイル表示か汎用ファイル表示かをクライアントが判断できない設計ギャップが
+新たに見つかった。ユーザーに2点確認の上（署名付きURLはS3署名付きURLをLambdaが直接発行する方式を
+採用しCloudFront Key Group運用は導入しない、添付ファイルは画像＋一般文書(PDF等)を許可）、
+Plan mode（`/Users/ikkounobuyuki/.claude/plans/serene-splashing-catmull.md`に記録済み）で
+実装計画を確定してから実装した。
+- **共有型**：新規`packages/shared/src/attachments.ts`に`AttachmentRef`型
+  （`key`/`fileName`/`contentType`/`size`）・サイズ上限（20MB）・MIME許可リスト・
+  `buildAttachmentKey`（`{context}/{ownerId}/{attachmentId}-{fileName}`形式、prefixがS3
+  ライフサイクルルールの適用範囲と一致）・`generateDraftId`（掲示板の新規投稿でpostId確定前に
+  アップロードするための非暗号強度ID生成。React NativeのHermesには`crypto.randomUUID`が無いため
+  web/mobile共通でこの関数を使う）を新設。`Message`/`BulletinPost`の`attachmentKeys?: string[]`は
+  `attachments?: AttachmentRef[]`にリネーム（書き込み経路が実質どこにも無かったため低リスク）
+- **バックエンド**：新規`infra/lambda/attachments/presign.ts`（`POST /attachments/upload-url`・
+  `POST /attachments/download-url`）が`@aws-sdk/s3-request-presigner`でS3署名付きURLを発行。
+  チャットは`ChatRoomsTable`のmemberUserIdsで認可、掲示板はダウンロード時のみ既存の
+  `isVisibleToCategory`で認可（アップロードは投稿本体に権限チェックが無い既存方針に合わせ
+  認証済みなら誰でも可）。`infra/lib/constructs/storage-construct.ts`に`chat/`prefix限定の
+  365日ライフサイクルルールを追加（掲示板添付は期限なし）。CloudFront distributionは
+  署名付きURL配信をS3側で直接行う方針に転換したため実質不要になり削除した。
+  `infra/lambda/bulletin/crud.ts`の`updatePost`/`deletePost`に、添付が外れた際にS3から
+  実オブジェクトを削除する処理を追加（`grantReadWrite`には`s3:DeleteObject*`が含まれないため
+  `grantDelete`を別途付与）。`infra/graphql/schema.graphql`に`Attachment`/`AttachmentInput`型を
+  新設し`Message.attachmentKeys`をリネーム、`chat-construct.ts`のVTLも追随
+- **Web/Mobile**：新規`AttachmentPicker`（選択→アップロード、モバイルはカメラ／カメラロール／
+  文書選択の3アクション、`expo-image-picker`・`expo-document-picker`を新規導入）・
+  `AttachmentList`（web）/`AttachmentPreview`（mobile、画像サムネイル・文書はダウンロード
+  ボタン→シェアシート、Phase 6の`.ics`共有と同じ`expo-file-system`/`expo-sharing`を再利用）を
+  新設し、チャット詳細・掲示板編集・掲示板詳細の計6画面（web/mobile各3）に配線。
+  `BulletinEditPage.tsx`の装飾のみで機能していなかった`<input type="file">`もこれで実配線された。
+  `orgApi.ts`/`chatClient.ts`（web/mobile）を`attachments`にリネームし、
+  `requestUploadUrl`/`requestDownloadUrl`を追加
+- テスト：新規`infra/test/lambda/attachments.test.ts`（chat/bulletin×upload/download×
+  正常系・403・404・400を網羅、14ケース）、`bulletin.test.ts`にS3クリーンアップのケース4件追加、
+  `on-connect-stack.test.ts`にライフサイクルルール・新規ルートの検証を追加。infra全160テスト・
+  `cdk synth`・web build・mobile tscが通過。ブラウザでログイン前画面が正常表示されコンソールにも
+  新規エラーが無いことを確認済み（`OnConnect-dev`への実デプロイ・実機でのアップロード検証は
+  ユーザー承認を得てから次回実施）
+- 副次的な発見（Phase 12の対象外、別タスクとして記録）：`infra/lambda/bulletin/crud.ts`の
+  `toggleReaction`がバレル(`@on-connect/shared`)経由でimportされているため、Phase 6と同じ理由
+  （`@holiday-jp/holiday_jp`のtree-shake失敗）で`BulletinFn`が277.9KBまで肥大化していたことが
+  判明した（Phase 12の変更による影響ではなく、Phase 9時点から存在した既存の潜在バグ）。
+  コード実装完了後、ユーザーの承認を得て`OnConnect-dev`へ実デプロイし（`cdk diff`で
+  CloudFront distribution削除・新規Lambda追加・S3ライフサイクルルール追加等の想定通りの
+  変更のみであることを確認してから実行）、Cognitoトークンを使ったcurlでのAPI直接検証と
+  ブラウザでの表示確認を組み合わせて実機検証した。
+  **その過程で1件の実バグを発見・修正した**：掲示板の新規投稿は保存前（postId未確定）に
+  クライアント生成のdraft IDをS3キーのprefixとして添付をアップロードするが、
+  `issueDownloadUrl`（`infra/lambda/attachments/presign.ts`）が全コンテキスト共通で
+  「key が `{context}/{ownerId}/` で始まるか」を検証しており、保存後の実際のpostId
+  （＝ダウンロード時に渡されるownerId）とdraft IDが一致しないため、掲示板添付の
+  ダウンロードURL発行が常に403になっていた（計画時点では「実postIdとS3キーのprefixが
+  一致しなくてもcosmeticな差異のみで実害はない」と判断していたが、実際にはこの
+  prefix検証ロジックが実害を生んでいた。ユニットテストではpostIdとdraft IDを常に
+  一致させて書いていたため検出できず、実際にアップロード→投稿作成→表示という一連の
+  流れを実機で検証して初めて発覚した）。
+  修正として、掲示板コンテキストのダウンロード認可を「keyのprefix一致」から
+  「投稿のattachments一覧に実際にそのkeyが含まれているか」の照合に変更した
+  （チャットはpostIdのような後決め問題が無くroomIdが常に先に確定しているため、
+  従来通りprefix一致のままでよい）。修正後、chat/bulletin双方で
+  アップロード→S3実体確認→投稿/メッセージ作成→ブラウザでの画像表示（実際に
+  presigned URLから画像がロードされ`complete:true`になることを確認）、掲示板の
+  添付削除（`attachments:[]`への更新）でS3オブジェクトが実際に消えること、
+  投稿削除で残りの添付も削除されることをすべて実機で確認した。
+  infra全161テスト（新規バグ対応でテストケースも更新）・`cdk synth`・web build・
+  mobile tscが通過。**これでPhase 12が完了し、Phase 1〜12が全て完了した**
+  （モバイルのシミュレータ/実機での添付機能確認、Phase 11の残り未検証項目
+  ＝着信応答・通話中UI・2者間音声疎通・iOS実機・Android全般は、このセッションでは
+  未実施のまま残っている）
+
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
 - **Phase 2（カレンダー独立DB化＋カテゴリー管理）**：完了・ローカルテスト確認済み
@@ -196,40 +272,45 @@ infra全117テスト・`cdk synth`・web build・mobile tscが通過し、`OnCon
   未検証**（次フェーズ着手前に改めて確認することが望ましい）。モバイルはネイティブ実装を選択、
   `modules/chime-audio-call/`新設（iOS Swift/Android Kotlin）。詳細は上記0章参照
   （独立した3章番号は割り当てていない）
+- **Phase 12（チャット・掲示板のファイル添付実装）**：完了・`OnConnect-dev`へデプロイ済み。
+  チャット・掲示板ともアップロード→S3実体確認→表示（presigned URLでの画像ロード成功）、
+  掲示板添付の編集削除・投稿削除時のS3クリーンアップまで実機（curl＋ブラウザ）で確認済み。
+  実機検証中に発見した1件の実バグ（掲示板のdraft ID／実postId不一致によりダウンロードURL
+  発行が常に403になっていた問題）も修正済み。**モバイル（Expo）での添付機能の実機確認は
+  未実施**。infra全161テスト・`cdk synth`・web build・mobile tscは通過済み。詳細は上記0章参照
+  （独立した3章番号は割り当てていない、実装計画は
+  `/Users/ikkounobuyuki/.claude/plans/serene-splashing-catmull.md`参照）
 
-### Phase 12〜13（未着手、優先順に記載。詳細は8章参照）
-- **Phase 12: チャット・掲示板のファイル添付実装**（ユーザーからの要望、2026-08-07）
-  1. チャット機能の改修：ファイルの送受信を実装したい。モバイル版からの写真添付を
-     よく行う可能性がある（＝モバイルのカメラロール/カメラ連携を優先的に検討すること）
-  2. ファイル管理：ストレージとして無期限に使うわけではないため、チャット添付は期間限定
-     （例：1年）で自動削除して問題ない。**ただし掲示板にアップロードされた添付ファイルは
-     手動削除しない限り保存し続けたい**（チャットと掲示板で保持ポリシーを分ける）
-  3. セキュリティ：現状の構成（S3非公開＋SSE-S3暗号化＋HTTPS強制＋CloudFront OAC、
-     Cognito/IAM認証）で「特に大きな問題がなければこのままでOK」との回答。ただし設計書
-     （5.3.2）が謳う「署名付きURL（有効期限付き）配信」がCloudFront側に未実装（
-     `trustedKeyGroups`等が無い）という指摘は伝達済みで、実装時にはここも含めて対応する
-  既存基盤：`S3AttachmentsBucket`・`CloudFrontDistribution`は`StorageConstruct`で
-  プロビジョニング済み、`attachmentKeys?: string[]`は`Message`/`BulletinPost`型に既存。
-  ただし**S3へのアップロード・署名付きURL発行を行うLambdaコードは現状ゼロ**
-  （`S3Client`を使うコードがinfra全体に1つも無い）ため、実質新規実装。
-- **Phase 13: 実際のモバイルプッシュ配信**
+### Phase 13（未着手）
+- **Phase 13: 実際のモバイルプッシュ配信**（詳細は8章参照）。SNSトピックへのpublishは
+  Phase 5・6で実装済み。不足しているのはAPNs/FCM向けのSNS Platform Application、
+  デバイストークンの登録エンドポイント、ユーザーID⇔デバイストークンの紐付け
+- Phase 11の残り未検証項目（着信応答・通話中UI・実際の2者間音声疎通・iOS実機・Android全般）と、
+  Phase 12のモバイル（Expo）での添付機能実機確認は、次回セッションで可能なら合わせて実施することが
+  望ましい（いずれもブロッカーではない）
 
 ### 現在のコミット状況
-Phase 1〜11まで全て**コミット済み・pushも完了済み**（直近のコミットハッシュ`f33383f`まで、
-`git log`で確認すること。この間の詳細な変更内容は本ファイルに書ききれていないコミットもあるため、
-必ず`git log`を一次情報として確認すること）。
+Phase 1〜11まで**コミット済み・pushも完了済み**（直近のコミットハッシュ`f33383f`まで）。
+**Phase 12はこのセッションで実装・デプロイ・実機検証まで完了したがまだコミットしていない**
+（ユーザーから明示的にコミットを指示されたら実施する）。`git log`・`git status`で必ず
+最新状態を確認すること。
 
 ### AWSデプロイの状況
 `OnConnect-dev`スタックを`ap-northeast-1`（アカウント`978841974977`、SSOプロファイル`dev`）に
 デプロイ済みで**現在もAWS上にリソースが存在している**（Cognito・DynamoDB 16テーブル・AppSync・
-S3+CloudFront・EventBridge Scheduler・API Gateway一式）。以降のセッションもこのdev環境に対して
-コードを変更したら都度`cdk deploy --profile dev --context envName=dev`で反映していく運用
+S3・EventBridge Scheduler・API Gateway一式。**Phase 12でCloudFront distributionは削除済み**、
+添付ファイルはS3署名付きURLで直接配信する方式に変更したため）。以降のセッションもこのdev環境に
+対してコードを変更したら都度`cdk deploy --profile dev --context envName=dev`で反映していく運用
 （destroyはしていない）。初回管理者アカウント（`loginId: staff01`、Cognito `AdminCreateUser`＋
 DynamoDB Usersテーブルへの直接`put-item`で作成、`RolePermissions`は全項目`true`）を作成済み。
-**staff01のパスワードはPhase 11の実機確認のため`TempPass123!`にリセット済み**（元のパスワードが
-不明だったため。継続利用する場合は変更を検討すること）。動作確認用に一時的に作成した2人目の
-テストユーザー（Phase 10では`staff02`、Phase 11でも同名で再作成）・テストチャットルーム・
-テストメッセージ・テストCallLogは確認後に都度削除済みで、現在Usersテーブルには`staff01`
+**staff01のパスワードは`TempPass123!`のまま**（継続利用する場合は変更を検討すること）。
+Phase 12の実機検証では、curlでの直接API検証用に一時的にS3へテスト画像をアップロードし、
+チャットへのテストメッセージ送信（「Phase12実機検証：添付テスト」、既読/削除機能がないため
+**そのまま残っている**）と、掲示板へのテスト投稿（作成→表示確認→添付削除確認→投稿削除確認まで
+行い、**投稿自体は削除済み**）を行った。対応するS3オブジェクトは、チャット添付分
+（`chat/`prefix）は1年後に自動削除される設計のためそのまま、掲示板添付分は投稿削除時に
+自動でクリーンアップ済み。動作確認用に一時的に作成した2人目のテストユーザー
+（Phase 10・11で`staff02`として作成・削除）は現在存在せず、Usersテーブルには`staff01`
 （テスト管理者）のみが存在する。継続利用する場合は`staff01`のログインID・表示名を実運用向けに
 整理するか、追加の管理者アカウントを作成すること。
 **再デプロイ・スタック削除など今後のAWS操作も引き続き必ずユーザーの明示的な承認を得ること**
@@ -931,6 +1012,10 @@ DynamoDB Usersテーブルへの直接`put-item`で作成、`RolePermissions`は
 | Web: チャット詳細（`@`メンション対応） | `apps/web/src/pages/ChatRoomPage.tsx` |
 | Web/Mobile: メンバー検索・選択の共通コンポーネント | `apps/web/src/components/MemberPicker.tsx` / `apps/mobile/src/components/MemberPicker.tsx` |
 | iCalendar(.ics)生成の共通純粋関数（Lambda/Web/Mobileで共通利用） | `packages/shared/src/ics.ts` |
+| 添付ファイル共通型・定数（AttachmentRef、Phase 12。Lambdaはバレル経由でなく直接import） | `packages/shared/src/attachments.ts` |
+| 添付ファイルのS3署名付きURL発行Lambda（アップロード/ダウンロード、Phase 12） | `infra/lambda/attachments/presign.ts` |
+| Web: 添付ファイル選択/アップロード・表示コンポーネント（Phase 12） | `apps/web/src/components/AttachmentPicker.tsx` / `AttachmentList.tsx` |
+| Mobile: 添付ファイル選択/アップロード・表示コンポーネント（Phase 12、カメラ/カメラロール/文書選択） | `apps/mobile/src/components/AttachmentPicker.tsx` / `AttachmentPreview.tsx` |
 | カレンダー月/週グリッド構築の共通純粋関数（Web/Mobileで共通利用、Lambdaは未使用） | `packages/shared/src/calendarGrid.ts` |
 | Mobile: ナビゲーション定義（4タブ＋MenuStackNavigator） | `apps/mobile/src/navigation/AppNavigator.tsx` |
 | Mobile: メニュー画面（メンバー/シフト管理/リンク集/個人設定への導線） | `apps/mobile/src/screens/MenuScreen.tsx` |
@@ -991,10 +1076,13 @@ Phase 9〜12は互いに強い依存関係は無く、着手順はユーザー�
   モバイルはユーザーの明示的な選択でネイティブ実装（Expo Modules API、iOS Swift/Android Kotlin）。
   発信側の実処理はWeb版で実機確認済み、実機デプロイで発覚した2件の実バグも修正済み。着信応答・
   通話中UI・2者間音声疎通・iOS実機・Android全般は未検証のまま残っている
-- **Phase 12: チャット・掲示板のファイル添付実装**（詳細は上記3章「完了したフェーズ」直下参照）
-  ユーザー要望（2026-08-07）：モバイルからの写真添付を優先、チャット添付は期間限定
-  （例：1年）で自動削除可、掲示板添付は手動削除以外では保持し続ける、セキュリティは現状維持でOK
-  （ただしCloudFrontの署名付きURL未実装という指摘は認識済み）
+- **Phase 12: チャット・掲示板のファイル添付実装 — 完了**（詳細は上記0章・3章「完了したフェーズ」直下参照）
+  ユーザー要望（2026-08-07）：モバイルからの写真添付を優先、チャット添付は期間限定（1年）で
+  自動削除、掲示板添付は手動削除以外では保持し続ける。CloudFront署名付きURL未実装という
+  指摘への対応として、S3署名付きURLをLambdaが直接発行する方式を採用（CloudFront
+  distribution自体は不要になったため削除）。新規`infra/lambda/attachments/presign.ts`・
+  `packages/shared/src/attachments.ts`・web/mobileの`AttachmentPicker`/`AttachmentList`
+  （mobileは`AttachmentPreview`）を新設
 - **Phase 13: 実際のモバイルプッシュ配信**
   SNSトピックへのpublishはPhase5・6で実装済み。不足しているのはAPNs/FCM向けのSNS Platform
   Application、デバイストークンの登録エンドポイント（`expo-notifications`は
