@@ -1,4 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-07時点、Phase 9完了・デプロイ済み）
+# On-Connect 実装進捗まとめ（〜2026-08-07時点、Phase 10完了・デプロイ済み）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -62,6 +62,53 @@ infra全117テスト・`cdk synth`・web build・mobile tscが通過し、`OnCon
 （コメント投稿・リアクショントグルがページリロード後も残ることを確認）まで完了している
 （コミット`941f633`）。**これでPhase 9が完了し、Phase 1〜9が全て完了した**。
 
+続けて**Phase 10（予約送信の実スケジューリング）**に着手・完了した。着手前の本ファイルは
+「`onMessageStreamChange.ts`・`sendScheduled.ts`は実装済みだが未検証」と記録していたが、
+実際は**両方とも中身がTODOコメントのみのスタブ**で、実装自体がゼロからだった
+（このズレ自体が「本ファイルは執筆時点のスナップショットに過ぎず必ず裏取りすること」という
+冒頭の注意書き通りの事例）。加えて調査の過程で、Web版の予約日時入力が`AWSDateTime`の要求する
+秒・タイムゾーン付き形式になっておらずミューテーションが必ず失敗する状態だったこと、
+`cancelScheduledMessage`ミューテーションがスキーマ・リゾルバとも存在するのに呼び出し側
+（UI）が一切無かったこと、モバイル版に予約送信の入力欄自体が無かったこと、
+`listMessagesForRoom`が`status`でフィルタしておらず予約中メッセージの本文が送信予定時刻より
+前に他のメンバーへ見えてしまうことも発覚し、実質的に設計書5.2.2の初実装となった
+（実装計画は`/Users/ikkounobuyuki/.claude/plans/rosy-twirling-fox.md`に記録済み、Phase 9用に
+作成したファイルをPhase 10用に上書き再利用）。
+- **バックエンド**：`onMessageStreamChange.ts`でMessages Streamsの`INSERT`(status:scheduled)→
+  `CreateSchedule`、`REMOVE`/`MODIFY`でscheduledから離脱→`DeleteSchedule`を実装
+  （EventBridge Scheduler、スケジュール名は`messageId`単体。`${roomId}_${messageId}`だと
+  UUID2つの連結で名前上限64文字を超えるため）。`sendScheduled.ts`は条件付き`UpdateItem`で
+  `status: sent`に更新後、新規`deliverScheduledMessage`ミューテーションを**このプロジェクト初の
+  Lambda→AppSync呼び出し**（IAM署名、`common/appsyncSigner.ts`新設）で叩き`onMessageSent`購読を
+  発火させて即時配信する。`listMessagesForRoom`のレスポンスVTLに、予約中メッセージは送信者本人
+  にのみ見せるフィルタを追加。`pushNotification.ts`はscheduled→sentのMODIFYも通知対象に追加。
+- **フロントエンド**：`cancelScheduledMessage`をweb/mobile双方の`chatClient.ts`に接続し取消ボタンを
+  新設、モバイルに予約送信入力欄（ネイティブ日時ピッカーは新規ネイティブ依存のリスクを避け
+  プレーンな`TextInput`）を新設、web側の`scheduledAt`フォーマット不備を修正。
+- **実機デプロイで発覚し修正した3件の実バグ**（いずれもユニットテスト・`cdk synth`では検出不可能で、
+  実際にスケジュールし発火まで待つ実地検証だったからこそ発見できたもの）：
+  ①EventBridge SchedulerがLambdaターゲットを直接起動する場合、`Target.Input`のJSONは
+  `event.detail`にラップされず、そのままイベントオブジェクトとして渡される
+  （`.detail`ラップはEventBridge Rules経由の場合のみ。`ScheduledHandler`型を信用して
+  `event.detail`を参照していたため毎回即座に失敗していた）。
+  ②`additionalAuthorizationModes`追加後、ディレクティブ無しのフィールドはデフォルト認証
+  （Cognito User Pool）のみが有効で、IAM署名で呼ぶ`deliverScheduledMessage`が
+  "Not Authorized"で失敗した。`@aws_iam`をミューテーション・レスポンスの参照フィールド双方に
+  明示する必要があった。
+  ③予約登録した瞬間（INSERT）でstatusを見ずに常に通知していたため、送信予定時刻より前に
+  プッシュ通知が飛んでいた（Phase 10着手前から存在した既存バグ）。
+  **また②の修正時、`Message.messageId`に`@aws_iam`のみを付けてしまい、暗黙のデフォルト認証
+  （Cognito User Pool）が失われる回帰を引き起こし、本番相当環境で通常ユーザーの全チャット取得が
+  一時的に壊れた**（`@aws_iam @aws_cognito_user_pools`の併記で復旧、詳細はコミット`238b184`）。
+  ディレクティブは「1つでも付けると暗黙のデフォルト認証が失われ、明示したモードのみになる」という
+  仕様を実地で学んだ。
+- infra全129テスト・`cdk synth`・web build・mobile tscが通過。`OnConnect-dev`への複数回の
+  再デプロイと、テスト用アカウント（`staff02`、確認後削除済み）を使った2ユーザー間の実機検証
+  （予約中は送信者以外に見えないこと、発火後に`sent`表示へ切り替わりリアルタイム配信されること、
+  取消でEventBridge Schedule自体も削除され二度と発火しないことを`aws scheduler get-schedule`で
+  確認）まで完了（コミット`70cceb9`・`238b184`）。**これでPhase 10が完了し、Phase 1〜10が
+  全て完了した**。
+
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
 - **Phase 2（カレンダー独立DB化＋カテゴリー管理）**：完了・ローカルテスト確認済み
@@ -94,14 +141,18 @@ infra全117テスト・`cdk synth`・web build・mobile tscが通過し、`OnCon
   実機確認済み（コメント投稿・リアクショントグルがリロード後も残ることを確認）。詳細は上記0章参照
   （独立した3章番号は割り当てていない。実装計画は
   `/Users/ikkounobuyuki/.claude/plans/rosy-twirling-fox.md`参照）
+- **Phase 10（予約送信の実スケジューリング）**：完了・`OnConnect-dev`へデプロイ済み、2ユーザー間の
+  実機検証済み（予約中は送信者以外に見えない・発火後sentに切り替わる・取消でスケジュールも
+  消えることを確認）。着手前は「実装済みだが未検証」と記録されていたが実際はスタブで、
+  実質的に設計書5.2.2の初実装だった。詳細・実地検証で発見した3件の実バグは上記0章参照
+  （独立した3章番号は割り当てていない）
 
-### Phase 10〜12（未着手、優先順に記載。詳細は8章参照）
-- **Phase 10: 予約送信の実スケジューリング**（既存インフラの実地検証が中心）
-- **Phase 11: Amazon Chime SDK音声通話実装**（Phase 8後、実機検証にAWSデプロイが必要）
-- **Phase 12: 実際のモバイルプッシュ配信**（Phase 8後）
+### Phase 11〜12（未着手、優先順に記載。詳細は8章参照）
+- **Phase 11: Amazon Chime SDK音声通話実装**（実機検証にAWSデプロイが必要）
+- **Phase 12: 実際のモバイルプッシュ配信**
 
 ### 現在のコミット状況
-Phase 1〜9まで全て**コミット済み・pushも完了済み**（直近のコミットハッシュ`941f633`まで、
+Phase 1〜10まで全て**コミット済み・pushも完了済み**（直近のコミットハッシュ`238b184`まで、
 `git log`で確認すること。この間の詳細な変更内容は本ファイルに書ききれていないコミットもあるため、
 必ず`git log`を一次情報として確認すること）。
 
@@ -865,10 +916,11 @@ Phase 9〜12は互いに強い依存関係は無く、着手順はユーザー�
   トグル）を追加し、ローカルstateのみだった`toggleReaction`等をAPI接続に置き換えた。チャットの
   リアクションはこのプロジェクト初のLambda裏付けAppSyncリゾルバ（`toggleMessageReaction`）で対応。
   `bulletin/notifyOnPost.ts`（従来`console.log`のみのスタブ）も実装した
-- **Phase 10: 予約送信の実スケジューリング**（Phase 8後）
-  `onMessageStreamChange.ts`（Streams→EventBridge Scheduler登録）・`sendScheduled.ts`
-  （実際の送信）は実装済みだがチャット未接続のため一度も実地検証されていない。Phase 8後にAppSync
-  経由の実メッセージで動作確認し、見つかったバグを直す作業が中心になる見込み
+- **Phase 10: 予約送信の実スケジューリング — 完了**（詳細は上記0章参照）
+  `onMessageStreamChange.ts`・`sendScheduled.ts`は実際には未実装（スタブのみ）だったため
+  ゼロから実装した。EventBridge Schedulerでの登録/取消、このプロジェクト初のLambda→AppSync
+  呼び出し（IAM署名）による配信、予約中メッセージの可視性フィルタ、取消UIの新設まで含めて
+  設計書5.2.2を一通り実装し、実機で3件のバグを発見・修正した
 - **Phase 11: Amazon Chime SDK音声通話実装**
   現状デモの着信画面遷移のみの`initiateCall.ts`を、Chime SDK Meetings API
   （CreateMeeting/CreateAttendee）を呼ぶ実装に差し替え、web/mobileにChime SDKクライアントを
