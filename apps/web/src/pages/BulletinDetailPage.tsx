@@ -10,6 +10,7 @@ import {
 } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
+import { AttachmentList } from "../components/AttachmentList";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
 import { orgApi } from "../api/orgApi";
@@ -106,6 +107,7 @@ export function BulletinDetailPage() {
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: post.body }}
       />
+      <AttachmentList attachments={post.attachments} context="bulletin" ownerId={post.postId} />
       <div style={{ marginTop: 12 }}>
         <ReactionBar reactions={post.reactions} currentUserId={currentUserId ?? ""} onToggle={handleToggleReaction} />
       </div>

@@ -2,6 +2,7 @@ process.env.BULLETIN_POSTS_TABLE_NAME = "test-BulletinPosts";
 process.env.BULLETIN_CATEGORIES_TABLE_NAME = "test-BulletinCategories";
 process.env.BULLETIN_COMMENTS_TABLE_NAME = "test-BulletinComments";
 process.env.USERS_TABLE_NAME = "test-Users";
+process.env.ATTACHMENTS_BUCKET_NAME = "test-Attachments";
 
 import { mockClient } from "aws-sdk-client-mock";
 import {
@@ -13,11 +14,13 @@ import {
   ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { S3Client, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import type { BulletinCategory, BulletinComment, BulletinPost, RolePermissions, User } from "@on-connect/shared";
+import type { AttachmentRef, BulletinCategory, BulletinComment, BulletinPost, RolePermissions, User } from "@on-connect/shared";
 import { handler } from "../../lambda/bulletin/crud";
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
+const s3Mock = mockClient(S3Client);
 
 const noPermissions: RolePermissions = {
   manageUsers: false,
@@ -69,7 +72,9 @@ async function invoke(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResul
 
 beforeEach(() => {
   ddbMock.reset();
+  s3Mock.reset();
   ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "caller-1" } }).resolves({ Item: caller });
+  s3Mock.on(DeleteObjectsCommand).resolves({});
 });
 
 describe("BulletinPosts CRUD", () => {
@@ -200,6 +205,117 @@ describe("BulletinPosts CRUD", () => {
     );
 
     expect(res.statusCode).toBe(204);
+    expect(s3Mock.commandCalls(DeleteObjectsCommand)).toHaveLength(0);
+  });
+
+  // --- 添付ファイルのS3クリーンアップ（Phase 12） ---
+
+  const attachmentA: AttachmentRef = { key: "bulletin/p1/a-1.png", fileName: "a.png", contentType: "image/png", size: 100 };
+  const attachmentB: AttachmentRef = { key: "bulletin/p1/b-2.pdf", fileName: "b.pdf", contentType: "application/pdf", size: 200 };
+
+  test("PUT /bulletin-posts/{postId} で添付が一部外れると、外れた分だけS3から削除される", async () => {
+    const existing: BulletinPost = {
+      postId: "p1",
+      title: "旧タイトル",
+      body: "<p>本文</p>",
+      authorId: "author-1",
+      visibleCategoryIds: [],
+      attachments: [attachmentA, attachmentB],
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({ Item: existing });
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}",
+        httpMethod: "PUT",
+        pathParameters: { postId: "p1" },
+        body: JSON.stringify({ attachments: [attachmentA] }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    const calls = s3Mock.commandCalls(DeleteObjectsCommand);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args[0].input.Delete?.Objects).toEqual([{ Key: attachmentB.key }]);
+  });
+
+  test("PUT /bulletin-posts/{postId} でattachmentsを含まない更新はS3を呼ばない", async () => {
+    const existing: BulletinPost = {
+      postId: "p1",
+      title: "旧タイトル",
+      body: "<p>本文</p>",
+      authorId: "author-1",
+      visibleCategoryIds: [],
+      attachments: [attachmentA],
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({ Item: existing });
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}",
+        httpMethod: "PUT",
+        pathParameters: { postId: "p1" },
+        body: JSON.stringify({ title: "新タイトル" }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(s3Mock.commandCalls(DeleteObjectsCommand)).toHaveLength(0);
+  });
+
+  test("PUT /bulletin-posts/{postId} でattachments: []を指定すると全添付が削除される", async () => {
+    const existing: BulletinPost = {
+      postId: "p1",
+      title: "旧タイトル",
+      body: "<p>本文</p>",
+      authorId: "author-1",
+      visibleCategoryIds: [],
+      attachments: [attachmentA, attachmentB],
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({ Item: existing });
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/bulletin-posts/{postId}",
+        httpMethod: "PUT",
+        pathParameters: { postId: "p1" },
+        body: JSON.stringify({ attachments: [] }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    const calls = s3Mock.commandCalls(DeleteObjectsCommand);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args[0].input.Delete?.Objects).toEqual(
+      expect.arrayContaining([{ Key: attachmentA.key }, { Key: attachmentB.key }]),
+    );
+  });
+
+  test("DELETE /bulletin-posts/{postId} は投稿が持つ全添付をS3から削除する", async () => {
+    ddbMock.on(GetCommand, { TableName: "test-BulletinPosts", Key: { postId: "p1" } }).resolves({
+      Item: { postId: "p1", authorId: "author-1", attachments: [attachmentA, attachmentB] },
+    });
+    ddbMock.on(DeleteCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({ resource: "/bulletin-posts/{postId}", httpMethod: "DELETE", pathParameters: { postId: "p1" } }),
+    );
+
+    expect(res.statusCode).toBe(204);
+    const calls = s3Mock.commandCalls(DeleteObjectsCommand);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args[0].input.Delete?.Objects).toEqual(
+      expect.arrayContaining([{ Key: attachmentA.key }, { Key: attachmentB.key }]),
+    );
   });
 });
 

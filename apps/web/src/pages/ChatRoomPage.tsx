@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Phone, Send, AlertTriangle, Clock, Bell, BellOff, Users, AtSign, X } from "lucide-react";
-import { mockChatRooms, mockMessages, toggleReaction, type ChatRoom, type Message } from "@on-connect/shared";
+import { mockChatRooms, mockMessages, toggleReaction, type AttachmentRef, type ChatRoom, type Message } from "@on-connect/shared";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
+import { AttachmentPicker } from "../components/AttachmentPicker";
+import { AttachmentList } from "../components/AttachmentList";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
 import { chatClient } from "../api/chatClient";
@@ -41,6 +43,7 @@ export function ChatRoomPage() {
   const [scheduledAt, setScheduledAt] = useState("");
   const [forceNotify, setForceNotify] = useState(false);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
   const [callError, setCallError] = useState<string | null>(null);
   const markingReadRef = useRef<Set<string>>(new Set());
 
@@ -111,12 +114,13 @@ export function ChatRoomPage() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!body.trim()) return;
+    if (!body.trim() && attachments.length === 0) return;
     try {
       const sent = await chatClient.sendMessage({
         roomId,
         senderId: currentUserId ?? "",
         body,
+        attachments: attachments.length > 0 ? attachments : undefined,
         scheduledAt: scheduledAt || undefined,
         forceNotify,
         mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
@@ -130,6 +134,7 @@ export function ChatRoomPage() {
           roomId,
           senderId: currentUserId ?? "",
           body,
+          attachments: attachments.length > 0 ? attachments : undefined,
           readByUserIds: [currentUserId ?? ""],
           status: scheduledAt ? "scheduled" : "sent",
           scheduledAt: scheduledAt || undefined,
@@ -143,6 +148,7 @@ export function ChatRoomPage() {
     setForceNotify(false);
     setScheduledAt("");
     setMentionedUserIds([]);
+    setAttachments([]);
   };
 
   const handleCall = async () => {
@@ -267,7 +273,8 @@ export function ChatRoomPage() {
                     <AtSign size={12} /> {m.mentionedUserIds.map((id) => memberName(id)).join("、")} 宛
                   </div>
                 )}
-                <div>{m.body}</div>
+                {m.body && <div>{m.body}</div>}
+                <AttachmentList attachments={m.attachments} context="chat" ownerId={roomId} />
               </div>
               <div style={{ marginTop: 4 }}>
                 <ReactionBar
@@ -292,6 +299,7 @@ export function ChatRoomPage() {
             <MemberPicker members={roomMembers} query={mentionMatch[1]} onSelect={handleSelectMention} />
           )}
         </div>
+        <AttachmentPicker context="chat" ownerId={roomId} value={attachments} onChange={setAttachments} />
         <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <Clock size={16} /> 予約送信日時：
           <input

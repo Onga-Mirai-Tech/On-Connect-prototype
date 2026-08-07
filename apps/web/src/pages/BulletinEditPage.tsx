@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { mockBulletinPosts } from "@on-connect/shared";
+import { generateDraftId, mockBulletinPosts, type AttachmentRef } from "@on-connect/shared";
 import { HtmlEditor } from "../components/HtmlEditor";
+import { AttachmentPicker } from "../components/AttachmentPicker";
 import { useOrgData } from "../context/OrgDataContext";
 import { orgApi } from "../api/orgApi";
 import { colors } from "../theme/colors";
@@ -20,8 +21,13 @@ export function BulletinEditPage() {
   const [body, setBody] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [visibleCategoryIds, setVisibleCategoryIds] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // 新規作成時、postIdが確定する前に添付ファイルをアップロードするためのS3キーprefix用ID
+  // （bulletinの投稿本体には権限チェックが無いため、DynamoDBの実レコードと対応している必要はない）
+  const [draftId] = useState(generateDraftId);
+  const attachmentOwnerId = postId ?? draftId;
 
   // 新規作成時のデフォルトカテゴリー：OrgDataContextの初期値はローディング中のモックフォールバックのため
   // bulletinCategoriesの中身だけでは実データか判定できない。isLoadingがfalseになる（取得試行完了）まで待つ
@@ -39,12 +45,14 @@ export function BulletinEditPage() {
         setBody(post.body);
         setCategoryId(post.categoryId ?? "");
         setVisibleCategoryIds(post.visibleCategoryIds);
+        setAttachments(post.attachments ?? []);
       } catch {
         const post = mockBulletinPosts.find((p) => p.postId === postId);
         setTitle(post?.title ?? "");
         setBody(post?.body ?? "");
         setCategoryId(post?.categoryId ?? "");
         setVisibleCategoryIds(post?.visibleCategoryIds ?? []);
+        setAttachments(post?.attachments ?? []);
       }
     })();
   }, [postId]);
@@ -59,7 +67,9 @@ export function BulletinEditPage() {
     setError("");
     setSaving(true);
     try {
-      const input = { title, body, categoryId: categoryId || undefined, visibleCategoryIds };
+      // attachmentsは（他フィールド同様）常に明示的に送る。空配列で送ることで、編集時に全添付を
+      // 削除したケースをサーバー側が「未指定＝現状維持」と誤解せず、正しくS3クリーンアップできるようにする
+      const input = { title, body, categoryId: categoryId || undefined, visibleCategoryIds, attachments };
       if (postId) {
         await orgApi.updateBulletinPost(postId, input);
         navigate(`/bulletin/${postId}`);
@@ -115,10 +125,8 @@ export function BulletinEditPage() {
         ))}
       </div>
       <div>
-        <label>
-          添付ファイル：
-          <input type="file" multiple />
-        </label>
+        <div style={{ marginBottom: 4 }}>添付ファイル</div>
+        <AttachmentPicker context="bulletin" ownerId={attachmentOwnerId} value={attachments} onChange={setAttachments} />
       </div>
       {error && <p style={{ color: colors.danger, fontSize: 13 }}>{error}</p>}
       <button type="button" onClick={handleSave} disabled={saving} style={{ marginTop: 12 }}>

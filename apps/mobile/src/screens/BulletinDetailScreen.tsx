@@ -12,6 +12,7 @@ import {
 } from "@on-connect/shared";
 import type { BulletinStackParamList } from "../navigation/AppNavigator";
 import { ReactionBar } from "../components/ReactionBar";
+import { AttachmentPreview } from "../components/AttachmentPreview";
 import { colors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
@@ -132,6 +133,7 @@ export function BulletinDetailScreen({ route, navigation }: Props) {
               />
             )}
           </View>
+          <AttachmentPreview attachments={post.attachments} context="bulletin" ownerId={post.postId} />
           <View style={styles.reactionRow}>
             <ReactionBar reactions={post.reactions} currentUserId={currentUserId ?? ""} onToggle={handleToggleReaction} />
           </View>

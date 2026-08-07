@@ -67,6 +67,7 @@ export class OnConnectStack extends Stack {
       memberDailyStatusTable: db.memberDailyStatusTable,
       dailyNotesTable: db.dailyNotesTable,
       attachmentsBucket: storage.attachmentsBucket,
+      chatRoomsTable: db.chatRoomsTable,
       chatApi: chat.api,
       pushTopic: notification.pushTopic,
     });
@@ -76,8 +77,5 @@ export class OnConnectStack extends Stack {
     new CfnOutput(this, "GraphqlApiUrl", { value: chat.api.graphqlUrl });
     new CfnOutput(this, "RestApiUrl", { value: api.restApi.url });
     new CfnOutput(this, "AttachmentsBucketName", { value: storage.attachmentsBucket.bucketName });
-    new CfnOutput(this, "AttachmentsDistributionDomain", {
-      value: storage.distribution.distributionDomainName,
-    });
   }
 }

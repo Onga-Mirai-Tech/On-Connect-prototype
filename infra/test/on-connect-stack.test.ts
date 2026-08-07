@@ -1,5 +1,5 @@
 import * as cdk from "aws-cdk-lib";
-import { Template } from "aws-cdk-lib/assertions";
+import { Match, Template } from "aws-cdk-lib/assertions";
 import { OnConnectStack } from "../lib/on-connect-stack";
 
 describe("OnConnectStack", () => {
@@ -31,5 +31,25 @@ describe("OnConnectStack", () => {
 
   test("REST APIが作成される", () => {
     template.resourceCountIs("AWS::ApiGateway::RestApi", 1);
+  });
+
+  test("添付ファイル用S3バケットにchat/限定365日ライフサイクルルールがある（Phase 12）", () => {
+    template.hasResourceProperties("AWS::S3::Bucket", {
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({
+            Id: "ExpireChatAttachments",
+            Prefix: "chat/",
+            ExpirationInDays: 365,
+          }),
+        ]),
+      },
+    });
+  });
+
+  test("添付ファイルアップロード/ダウンロードURL発行用のREST APIルートが作成される（Phase 12）", () => {
+    template.hasResourceProperties("AWS::ApiGateway::Resource", { PathPart: "attachments" });
+    template.hasResourceProperties("AWS::ApiGateway::Resource", { PathPart: "upload-url" });
+    template.hasResourceProperties("AWS::ApiGateway::Resource", { PathPart: "download-url" });
   });
 });

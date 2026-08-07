@@ -143,7 +143,7 @@ $util.toJson($visible)`),
   "attributeValues": {
     "senderId": $util.dynamodb.toDynamoDBJson($ctx.args.input.senderId),
     "body": $util.dynamodb.toDynamoDBJson($ctx.args.input.body),
-    "attachmentKeys": $util.dynamodb.toDynamoDBJson($util.defaultIfNull($ctx.args.input.attachmentKeys, [])),
+    "attachments": $util.dynamodb.toDynamoDBJson($util.defaultIfNull($ctx.args.input.attachments, [])),
     "readByUserIds": $util.dynamodb.toDynamoDBJson([]),
     "status": $util.dynamodb.toDynamoDBJson($status),
     "scheduledAt": $util.dynamodb.toDynamoDBJson($ctx.args.input.scheduledAt),

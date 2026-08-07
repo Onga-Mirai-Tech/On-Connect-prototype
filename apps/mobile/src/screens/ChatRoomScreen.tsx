@@ -3,11 +3,13 @@ import { View, Text, TextInput, Pressable, Switch, StyleSheet, FlatList } from "
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { mockChatRooms, mockMessages, toggleReaction, type ChatRoom, type Message } from "@on-connect/shared";
+import { mockChatRooms, mockMessages, toggleReaction, type AttachmentRef, type ChatRoom, type Message } from "@on-connect/shared";
 import type { ChatStackParamList, HomeTabParamList, RootStackParamList } from "../navigation/AppNavigator";
 import { colors } from "../theme/colors";
 import { ReactionBar } from "../components/ReactionBar";
 import { MemberPicker } from "../components/MemberPicker";
+import { AttachmentPicker } from "../components/AttachmentPicker";
+import { AttachmentPreview } from "../components/AttachmentPreview";
 import { useAuth } from "../context/AuthContext";
 import { useOrgData } from "../context/OrgDataContext";
 import { chatClient } from "../api/chatClient";
@@ -45,6 +47,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   const [scheduledAt, setScheduledAt] = useState("");
   const [forceNotify, setForceNotify] = useState(false);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
   const [callError, setCallError] = useState<string | null>(null);
   const markingReadRef = useRef<Set<string>>(new Set());
 
@@ -112,12 +115,13 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   };
 
   const handleSend = async () => {
-    if (!body.trim()) return;
+    if (!body.trim() && attachments.length === 0) return;
     try {
       const sent = await chatClient.sendMessage({
         roomId,
         senderId: currentUserId ?? "",
         body,
+        attachments: attachments.length > 0 ? attachments : undefined,
         scheduledAt: scheduledAt || undefined,
         forceNotify,
         mentionedUserIds: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
@@ -131,6 +135,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           roomId,
           senderId: currentUserId ?? "",
           body,
+          attachments: attachments.length > 0 ? attachments : undefined,
           readByUserIds: [currentUserId ?? ""],
           status: scheduledAt ? "scheduled" : "sent",
           scheduledAt: scheduledAt || undefined,
@@ -144,6 +149,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
     setScheduledAt("");
     setForceNotify(false);
     setMentionedUserIds([]);
+    setAttachments([]);
   };
 
   const handleCancelScheduled = async (messageId: string) => {
@@ -275,7 +281,8 @@ export function ChatRoomScreen({ route, navigation }: Props) {
                     </Text>
                   </View>
                 )}
-                <Text>{item.body}</Text>
+                {!!item.body && <Text>{item.body}</Text>}
+                <AttachmentPreview attachments={item.attachments} context="chat" ownerId={roomId} />
               </View>
               <View style={styles.reactionRow}>
                 <ReactionBar
@@ -299,6 +306,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           onChangeText={setBody}
           multiline
         />
+        <AttachmentPicker context="chat" ownerId={roomId} value={attachments} onChange={setAttachments} />
         <View style={styles.rowLabel}>
           <Ionicons name="time-outline" size={16} color={colors.textMuted} />
           <Text>予約送信日時：</Text>

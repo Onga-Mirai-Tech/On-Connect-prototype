@@ -1,19 +1,19 @@
 import { Construct } from "constructs";
 import { RemovalPolicy, Duration } from "aws-cdk-lib";
 import * as s3 from "aws-cdk-lib/aws-s3";
-import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
-import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 
 export interface StorageConstructProps {
   envName: string;
 }
 
 /**
- * チャット・掲示板の添付ファイル保存（5.2.1 / 5.3.2）＋ 配信高速化（4.2）
+ * チャット・掲示板の添付ファイル保存（5.2.1 / 5.3.2）。
+ * 配信はCloudFrontではなく、Lambda（Phase 12 `attachments/presign.ts`）が発行するS3署名付き
+ * URLをクライアントが直接使う方式（組織規模的にCDNキャッシュの恩恵が薄く、CloudFront Key Group
+ * ＋秘密鍵の運用コストを避けるための判断）。そのためCloudFront distributionは設置しない。
  */
 export class StorageConstruct extends Construct {
   public readonly attachmentsBucket: s3.Bucket;
-  public readonly distribution: cloudfront.Distribution;
 
   constructor(scope: Construct, id: string, props: StorageConstructProps) {
     super(scope, id);
@@ -37,20 +37,16 @@ export class StorageConstruct extends Construct {
           id: "AbortIncompleteMultipartUpload",
           abortIncompleteMultipartUploadAfter: Duration.days(7),
         },
+        {
+          // チャット添付は期間限定（掲示板添付は手動削除以外では保持し続けるためprefix対象外）
+          id: "ExpireChatAttachments",
+          prefix: "chat/",
+          expiration: Duration.days(365),
+        },
       ],
       removalPolicy:
         props.envName === "prod" ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
       autoDeleteObjects: props.envName !== "prod",
-    });
-
-    // 添付ファイルは署名付きURLで配信するため、OACでS3への直接アクセスのみ許可する
-    this.distribution = new cloudfront.Distribution(this, "AttachmentsDistribution", {
-      comment: `on-connect-${props.envName} attachments`,
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(this.attachmentsBucket),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-      },
     });
   }
 }

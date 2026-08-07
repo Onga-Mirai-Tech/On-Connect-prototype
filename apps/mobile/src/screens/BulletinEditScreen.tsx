@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { mockBulletinPosts, type BulletinPost } from "@on-connect/shared";
+import { generateDraftId, mockBulletinPosts, type AttachmentRef, type BulletinPost } from "@on-connect/shared";
 import type { BulletinStackParamList } from "../navigation/AppNavigator";
 import { HtmlEditor } from "../components/HtmlEditor";
+import { AttachmentPicker } from "../components/AttachmentPicker";
 import { colors } from "../theme/colors";
 import { useOrgData } from "../context/OrgDataContext";
 import { orgApi } from "../api/orgApi";
@@ -23,8 +24,13 @@ export function BulletinEditScreen({ route, navigation }: Props) {
 
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // 新規作成時、postIdが確定する前に添付ファイルをアップロードするためのS3キーprefix用ID
+  // （bulletinの投稿本体には権限チェックが無いため、DynamoDBの実レコードと対応している必要はない）
+  const [draftId] = useState(generateDraftId);
+  const attachmentOwnerId = postId ?? draftId;
 
   useEffect(() => {
     if (!postId) return;
@@ -38,6 +44,7 @@ export function BulletinEditScreen({ route, navigation }: Props) {
       setExistingPost(post);
       setTitle(post?.title ?? "");
       setBody(post?.body ?? "");
+      setAttachments(post?.attachments ?? []);
     })();
   }, [postId]);
 
@@ -45,11 +52,14 @@ export function BulletinEditScreen({ route, navigation }: Props) {
     setError("");
     setSaving(true);
     try {
+      // attachmentsは（他フィールド同様）常に明示的に送る。空配列で送ることで、編集時に全添付を
+      // 削除したケースをサーバー側が「未指定＝現状維持」と誤解せず、正しくS3クリーンアップできるようにする
       const input = {
         title,
         body,
         categoryId: existingPost?.categoryId ?? bulletinCategories[0]?.categoryId,
         visibleCategoryIds: existingPost?.visibleCategoryIds ?? [],
+        attachments,
       };
       if (postId) {
         await orgApi.updateBulletinPost(postId, input);
@@ -81,6 +91,8 @@ export function BulletinEditScreen({ route, navigation }: Props) {
       </Text>
       <Text style={styles.label}>本文</Text>
       <HtmlEditor value={body} onChange={setBody} />
+      <Text style={styles.label}>添付ファイル</Text>
+      <AttachmentPicker context="bulletin" ownerId={attachmentOwnerId} value={attachments} onChange={setAttachments} />
       <Text style={styles.label}>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</Text>
       {memberCategories.map((c) => (
         <Text key={c.categoryId} style={styles.category}>

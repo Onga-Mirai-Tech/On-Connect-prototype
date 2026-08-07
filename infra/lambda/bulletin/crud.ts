@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import type { BulletinCategory, BulletinComment, BulletinPost, User } from "@on-connect/shared";
+import { S3Client, DeleteObjectsCommand } from "@aws-sdk/client-s3";
+import type { AttachmentRef, BulletinCategory, BulletinComment, BulletinPost, User } from "@on-connect/shared";
 import { toggleReaction } from "@on-connect/shared";
 import { requirePermission } from "../common/authz";
 import { docClient, isTableEmpty } from "../common/dynamo";
@@ -19,6 +20,23 @@ const BULLETIN_POSTS_TABLE_NAME = process.env.BULLETIN_POSTS_TABLE_NAME!;
 const BULLETIN_CATEGORIES_TABLE_NAME = process.env.BULLETIN_CATEGORIES_TABLE_NAME!;
 const BULLETIN_COMMENTS_TABLE_NAME = process.env.BULLETIN_COMMENTS_TABLE_NAME!;
 const USERS_TABLE_NAME = process.env.USERS_TABLE_NAME!;
+const ATTACHMENTS_BUCKET_NAME = process.env.ATTACHMENTS_BUCKET_NAME!;
+
+const s3Client = new S3Client({});
+
+/**
+ * 掲示板添付は手動削除しない限り保持し続ける方針（チャット添付のような自動期限切れは無い）ため、
+ * 添付が投稿の編集・削除で実際に外れた時点でS3側も明示的に削除する（Phase 12）。
+ */
+async function deleteAttachmentObjects(attachments: AttachmentRef[]): Promise<void> {
+  if (attachments.length === 0) return; // S3のDeleteObjectsは空のObjects配列を拒否する
+  await s3Client.send(
+    new DeleteObjectsCommand({
+      Bucket: ATTACHMENTS_BUCKET_NAME,
+      Delete: { Objects: attachments.map((a) => ({ Key: a.key })) },
+    }),
+  );
+}
 
 /**
  * 掲示板CRUD（設計書5.3.1〜5.3.3）。
@@ -99,7 +117,7 @@ async function createPost(event: APIGatewayProxyEvent) {
     authorId,
     visibleCategoryIds: input.visibleCategoryIds ?? [],
     ...(input.categoryId ? { categoryId: input.categoryId } : {}),
-    ...(input.attachmentKeys ? { attachmentKeys: input.attachmentKeys } : {}),
+    ...(input.attachments ? { attachments: input.attachments } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -120,6 +138,15 @@ async function updatePost(postId: string, event: APIGatewayProxyEvent) {
     updatedAt: new Date().toISOString(),
   };
 
+  // 添付が明示的に含まれるリクエスト（空配列での全クリアも含む）の場合のみ、
+  // 外れた添付をS3から削除する（DB更新の前に行い、削除失敗時はDB更新自体も行わない）
+  if (input.attachments) {
+    const currentKeys = new Set((current.attachments ?? []).map((a) => a.key));
+    const updatedKeys = new Set(updated.attachments?.map((a) => a.key) ?? []);
+    const removed = (current.attachments ?? []).filter((a) => !updatedKeys.has(a.key) && currentKeys.has(a.key));
+    await deleteAttachmentObjects(removed);
+  }
+
   await docClient.send(new PutCommand({ TableName: BULLETIN_POSTS_TABLE_NAME, Item: updated }));
   return jsonResponse(200, updated);
 }
@@ -128,6 +155,7 @@ async function deletePost(postId: string) {
   const current = await fetchPost(postId);
   if (!current) throw new HttpError(404, "投稿が見つかりません");
 
+  await deleteAttachmentObjects(current.attachments ?? []);
   await docClient.send(new DeleteCommand({ TableName: BULLETIN_POSTS_TABLE_NAME, Key: { postId } }));
   return jsonResponse(204, {});
 }

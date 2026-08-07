@@ -3,6 +3,8 @@
  * docs/DESIGN.md 8章「データ設計（主要テーブル例）」に対応
  */
 
+import type { AttachmentRef } from "./attachments";
+
 export type NotificationStatus = "ON" | "OFF";
 
 /**
@@ -69,7 +71,7 @@ export interface Message {
   roomId: string;
   senderId: string;
   body: string;
-  attachmentKeys?: string[];
+  attachments?: AttachmentRef[];
   readByUserIds: string[];
   status: MessageStatus;
   scheduledAt?: string;
@@ -94,7 +96,7 @@ export interface BulletinPost {
   categoryId?: string;
   /** HTML編集に対応した本文（保存・表示ともにHTML文字列）。表示側でのサニタイズが必須。 */
   body: string;
-  attachmentKeys?: string[];
+  attachments?: AttachmentRef[];
   authorId: string;
   /** 空配列の場合は全メンバーに公開 */
   visibleCategoryIds: string[];

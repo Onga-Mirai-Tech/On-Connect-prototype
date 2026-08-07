@@ -1,5 +1,5 @@
 import { generateClient, type GraphQLQuery, type GraphQLSubscription } from "aws-amplify/api";
-import type { ChatRoom, Message } from "@on-connect/shared";
+import type { AttachmentRef, ChatRoom, Message } from "@on-connect/shared";
 
 const GRAPHQL_API_URL = import.meta.env.VITE_GRAPHQL_API_URL;
 
@@ -11,7 +11,7 @@ export interface SendMessageInput {
   roomId: string;
   senderId: string;
   body: string;
-  attachmentKeys?: string[];
+  attachments?: AttachmentRef[];
   scheduledAt?: string;
   forceNotify?: boolean;
   mentionedUserIds?: string[];
@@ -37,7 +37,7 @@ export interface ToggleReactionInput {
 }
 
 const CHAT_ROOM_FIELDS = `roomId isGroup name memberUserIds createdAt`;
-const MESSAGE_FIELDS = `messageId roomId senderId body attachmentKeys readByUserIds status scheduledAt forceNotify mentionedUserIds reactions { emoji userIds } createdAt`;
+const MESSAGE_FIELDS = `messageId roomId senderId body attachments { key fileName contentType size } readByUserIds status scheduledAt forceNotify mentionedUserIds reactions { emoji userIds } createdAt`;
 
 const listChatRoomsForUserQuery = `query ListChatRoomsForUser($userId: ID!) {
   listChatRoomsForUser(userId: $userId) { ${CHAT_ROOM_FIELDS} }

@@ -1,5 +1,7 @@
 import { fetchAuthSession } from "aws-amplify/auth";
 import type {
+  AttachmentContext,
+  AttachmentRef,
   BulletinCategory,
   BulletinComment,
   BulletinPost,
@@ -102,7 +104,7 @@ export const orgApi = {
     body: string;
     categoryId?: string;
     visibleCategoryIds?: string[];
-    attachmentKeys?: string[];
+    attachments?: AttachmentRef[];
   }) => authFetchJson<BulletinPost>("/bulletin-posts", { method: "POST", body: JSON.stringify(input) }),
   updateBulletinPost: (postId: string, partial: Partial<BulletinPost>) =>
     authFetchJson<BulletinPost>(`/bulletin-posts/${postId}`, { method: "PUT", body: JSON.stringify(partial) }),
@@ -172,4 +174,22 @@ export const orgApi = {
   updateDailyNote: (date: string, note: string) =>
     authFetchJson<DailyNote>(`/daily-notes/${date}`, { method: "PUT", body: JSON.stringify({ note }) }),
   deleteDailyNote: (date: string) => authFetchJson<void>(`/daily-notes/${date}`, { method: "DELETE" }),
+
+  // --- チャット・掲示板の添付ファイル（Phase 12） ---
+  requestUploadUrl: (input: {
+    context: AttachmentContext;
+    ownerId: string;
+    fileName: string;
+    contentType: string;
+    size: number;
+  }) =>
+    authFetchJson<{ uploadUrl: string; attachment: AttachmentRef }>("/attachments/upload-url", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  requestDownloadUrl: (input: { context: AttachmentContext; ownerId: string; key: string }) =>
+    authFetchJson<{ downloadUrl: string; expiresInSeconds: number }>("/attachments/download-url", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };

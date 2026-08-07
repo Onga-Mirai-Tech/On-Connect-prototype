@@ -29,6 +29,8 @@ export interface ApiConstructProps {
   memberDailyStatusTable: dynamodb.Table;
   dailyNotesTable: dynamodb.Table;
   attachmentsBucket: s3.Bucket;
+  /** Phase 12: 添付ファイルアップロード時のチャットルームメンバーシップ確認に必要 */
+  chatRoomsTable: dynamodb.Table;
   /** Phase 11: initiateCallFnがnotifyIncomingCallをIAM署名付きで呼ぶために必要 */
   chatApi: appsync.GraphqlApi;
   /** Phase 11: 着信のプッシュ通知発行に必要 */
@@ -149,6 +151,9 @@ export class ApiConstruct extends Construct {
     props.bulletinCategoriesTable.grantReadWriteData(bulletinFn);
     props.bulletinCommentsTable.grantReadWriteData(bulletinFn);
     props.attachmentsBucket.grantReadWrite(bulletinFn);
+    // 添付ファイルが投稿の編集・削除で外れた際にS3側も削除するため（Phase 12、grantReadWriteには
+    // s3:DeleteObject*が含まれないため別途必要）
+    props.attachmentsBucket.grantDelete(bulletinFn);
     props.usersTable.grantReadData(bulletinFn);
 
     const bulletinResource = this.restApi.root.addResource("bulletin-posts");
@@ -260,6 +265,30 @@ export class ApiConstruct extends Construct {
     const callItem = callsResource.addResource("{callId}");
     const callEndResource = callItem.addResource("end");
     callEndResource.addMethod("POST", new apigateway.LambdaIntegration(initiateCallFn), authOptions);
+
+    // --- チャット・掲示板の添付ファイル用、S3署名付きURL発行（5.2.1 / 5.3.2、Phase 12） ---
+    const attachmentsFn = new lambdaNode.NodejsFunction(this, "AttachmentsFn", {
+      entry: path.join(__dirname, "../../lambda/attachments/presign.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      environment: {
+        ATTACHMENTS_BUCKET_NAME: props.attachmentsBucket.bucketName,
+        CHAT_ROOMS_TABLE_NAME: props.chatRoomsTable.tableName,
+        BULLETIN_POSTS_TABLE_NAME: props.bulletinPostsTable.tableName,
+        USERS_TABLE_NAME: props.usersTable.tableName,
+      },
+    });
+    // Put（アップロード署名）・Get（ダウンロード署名）の両方に必要
+    props.attachmentsBucket.grantReadWrite(attachmentsFn);
+    props.chatRoomsTable.grantReadData(attachmentsFn);
+    props.bulletinPostsTable.grantReadData(attachmentsFn);
+    props.usersTable.grantReadData(attachmentsFn);
+
+    const attachmentsResource = this.restApi.root.addResource("attachments");
+    const attachmentsUploadUrl = attachmentsResource.addResource("upload-url");
+    attachmentsUploadUrl.addMethod("POST", new apigateway.LambdaIntegration(attachmentsFn), authOptions);
+    const attachmentsDownloadUrl = attachmentsResource.addResource("download-url");
+    attachmentsDownloadUrl.addMethod("POST", new apigateway.LambdaIntegration(attachmentsFn), authOptions);
 
     // --- 休日・当番・シフト管理：全項目manageShifts権限が必要、閲覧のみ全員に開放 ---
     const shiftsFn = new lambdaNode.NodejsFunction(this, "ShiftsFn", {
