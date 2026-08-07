@@ -67,6 +67,8 @@ export class OnConnectStack extends Stack {
       memberDailyStatusTable: db.memberDailyStatusTable,
       dailyNotesTable: db.dailyNotesTable,
       attachmentsBucket: storage.attachmentsBucket,
+      chatApi: chat.api,
+      pushTopic: notification.pushTopic,
     });
 
     new CfnOutput(this, "UserPoolId", { value: auth.userPool.userPoolId });

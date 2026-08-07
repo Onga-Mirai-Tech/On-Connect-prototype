@@ -229,5 +229,19 @@ $util.toJson($visible)`),
 }`),
       responseMappingTemplate: appsync.MappingTemplate.dynamoDbResultItem(),
     });
+
+    // 1対1音声通話の着信通知トリガー（Phase 11）。initiateCall.tsがChime SDKのMeeting/Attendeeを
+    // 作成した後、IAM署名付きで呼び出す。DynamoDBの裏付けは無く（Noneデータソース）、
+    // 渡された引数をそのままonIncomingCall購読へ中継するだけ
+    const callNotificationDS = this.api.addNoneDataSource("CallNotificationDataSource");
+    callNotificationDS.createResolver("NotifyIncomingCallResolver", {
+      typeName: "Mutation",
+      fieldName: "notifyIncomingCall",
+      requestMappingTemplate: appsync.MappingTemplate.fromString(`{
+  "version": "2018-05-29",
+  "payload": $util.toJson($ctx.args.input)
+}`),
+      responseMappingTemplate: appsync.MappingTemplate.fromString("$util.toJson($ctx.result)"),
+    });
   }
 }

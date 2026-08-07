@@ -83,6 +83,33 @@ input ToggleReactionInput {
   userId: ID!
 }
 
+"""
+1対1音声通話の着信通知（Phase 11）。initiateCall.tsがIAM署名付きでnotifyIncomingCallを呼んだ結果を
+そのままonIncomingCall購読へ中継するだけの型（DynamoDBの裏付けは無い、Noneデータソース）。
+全フィールドに@aws_iamと@aws_cognito_user_poolsの両方を付与する
+（Phase 10のMessage.messageIdと同じ理由：IAM署名での書き込みとCognito購読での読み取り、
+両方の認可モードを明示しないと通常ユーザーへの配信が壊れる）
+"""
+type CallNotification {
+  callId: ID! @aws_iam @aws_cognito_user_pools
+  callerId: ID! @aws_iam @aws_cognito_user_pools
+  callerName: String! @aws_iam @aws_cognito_user_pools
+  calleeId: ID! @aws_iam @aws_cognito_user_pools
+  """CreateMeetingCommandの生レスポンス（JSON）。amazon-chime-sdk-jsのMeetingSessionConfigurationにそのまま渡す"""
+  meetingJson: AWSJSON! @aws_iam @aws_cognito_user_pools
+  """着信者用CreateAttendeeCommandの生レスポンス（JSON）"""
+  calleeAttendeeJson: AWSJSON! @aws_iam @aws_cognito_user_pools
+}
+
+input NotifyIncomingCallInput {
+  callId: ID!
+  callerId: ID!
+  callerName: String!
+  calleeId: ID!
+  meetingJson: AWSJSON!
+  calleeAttendeeJson: AWSJSON!
+}
+
 type Query {
   getChatRoom(roomId: ID!): ChatRoom
   listMessagesForRoom(roomId: ID!, limit: Int, nextToken: String): [Message!]!
@@ -109,6 +136,12 @@ type Mutation {
   ディレクティブでの明示指定が必須という仕様だった）
   """
   deliverScheduledMessage(roomId: ID!, messageId: ID!): Message! @aws_iam
+  """
+  1対1音声通話の着信通知トリガー（Phase 11）。initiateCall.tsがChime SDKのMeeting/Attendeeを
+  作成した後、IAM署名付きで呼ぶ。DynamoDBへの書き込みは無く、onIncomingCall購読を発火させる
+  ためだけに存在する（deliverScheduledMessageと同じNoneデータソースパターン）
+  """
+  notifyIncomingCall(input: NotifyIncomingCallInput!): CallNotification! @aws_iam
 }
 
 type Subscription {
@@ -118,6 +151,9 @@ type Subscription {
     @aws_subscribe(mutations: ["markMessageRead"])
   onMessageReactionChanged(roomId: ID!): Message
     @aws_subscribe(mutations: ["toggleMessageReaction"])
+  """自分（calleeId）宛ての着信を購読する（Phase 11）"""
+  onIncomingCall(calleeId: ID!): CallNotification
+    @aws_subscribe(mutations: ["notifyIncomingCall"])
 }
 
 schema {

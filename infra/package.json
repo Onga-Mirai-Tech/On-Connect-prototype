@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/client-chime-sdk-meetings": "^3.1105.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.1104.0",
     "@aws-sdk/client-dynamodb": "^3.1101.0",
     "@aws-sdk/client-scheduler": "^3.1105.0",

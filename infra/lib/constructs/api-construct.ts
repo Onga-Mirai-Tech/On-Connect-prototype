@@ -1,12 +1,14 @@
 import { Construct } from "constructs";
 import * as path from "path";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
+import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as s3 from "aws-cdk-lib/aws-s3";
+import * as sns from "aws-cdk-lib/aws-sns";
 
 export interface ApiConstructProps {
   envName: string;
@@ -26,6 +28,10 @@ export interface ApiConstructProps {
   memberDailyStatusTable: dynamodb.Table;
   dailyNotesTable: dynamodb.Table;
   attachmentsBucket: s3.Bucket;
+  /** Phase 11: initiateCallFnがnotifyIncomingCallをIAM署名付きで呼ぶために必要 */
+  chatApi: appsync.GraphqlApi;
+  /** Phase 11: 着信のプッシュ通知発行に必要 */
+  pushTopic: sns.Topic;
 }
 
 /**
@@ -225,10 +231,15 @@ export class ApiConstruct extends Construct {
       environment: {
         CALL_LOGS_TABLE_NAME: props.callLogsTable.tableName,
         USERS_TABLE_NAME: props.usersTable.tableName,
+        CHAT_API_URL: props.chatApi.graphqlUrl,
+        PUSH_TOPIC_ARN: props.pushTopic.topicArn,
       },
     });
     props.callLogsTable.grantReadWriteData(initiateCallFn);
     props.usersTable.grantReadData(initiateCallFn);
+    props.pushTopic.grantPublish(initiateCallFn);
+    // Phase 11: notifyIncomingCallをIAM署名付きで呼ぶために必要（Phase 10のdeliverScheduledMessageと同じパターン）
+    props.chatApi.grant(initiateCallFn, appsync.IamResource.ofType("Mutation", "notifyIncomingCall"), "appsync:GraphQL");
     initiateCallFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
@@ -242,6 +253,9 @@ export class ApiConstruct extends Construct {
 
     const callsResource = this.restApi.root.addResource("calls");
     callsResource.addMethod("POST", new apigateway.LambdaIntegration(initiateCallFn), authOptions);
+    const callItem = callsResource.addResource("{callId}");
+    const callEndResource = callItem.addResource("end");
+    callEndResource.addMethod("POST", new apigateway.LambdaIntegration(initiateCallFn), authOptions);
 
     // --- 休日・当番・シフト管理：全項目manageShifts権限が必要、閲覧のみ全員に開放 ---
     const shiftsFn = new lambdaNode.NodejsFunction(this, "ShiftsFn", {
