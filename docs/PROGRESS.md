@@ -109,6 +109,50 @@ infra全117テスト・`cdk synth`・web build・mobile tscが通過し、`OnCon
   確認）まで完了（コミット`70cceb9`・`238b184`）。**これでPhase 10が完了し、Phase 1〜10が
   全て完了した**。
 
+続けて**Phase 11（Amazon Chime SDK音声通話実装）**に着手・完了した。設計書5.2.4の実装で、
+`initiateCall.ts`が`501 Not implemented`を返すだけのスタブだったため実質ゼロからの実装だった。
+モバイル版の音声通話について、AWSがReact Native向けの公式Chime SDKを提供していないため
+「Web版のみ実装（推奨）」か「モバイルもネイティブ実装する」かをユーザーに確認したところ、
+**「モバイルもネイティブ音声通話を実装する」を明示的に選択された**（推奨案ではない方）。
+- **バックエンド**：`POST /calls`（Chime `CreateMeeting`/`CreateAttendee`を呼び、発信者には
+  レスポンスで即座にMeeting/Attendee情報を返し、着信者には新規`notifyIncomingCall`ミューテーション
+  （Noneデータソース、Phase10の`appsyncSigner.ts`を再利用したIAM署名付き呼び出し）で通知）、
+  `POST /calls/{callId}/end`（`DeleteMeeting`＋`CallLogs`へ1回だけ記録、
+  `ConditionExpression: attribute_not_exists`で発信者タイムアウトと着信者操作の競合に対処）を実装。
+  通知OFFのユーザーには発信自体を`409`で拒否する設計。infra11テスト新規・全140テスト・
+  `cdk synth`通過。
+- **Web**：`amazon-chime-sdk-js`を新規導入し、`IncomingCallPage.tsx`を発信中/着信中/通話中の
+  3状態を持つ実UIに拡張。`router.tsx`にログイン中常時`onIncomingCall`を購読するグローバル
+  着信リスナーを追加。`amazon-chime-sdk-component-library-react`は`styled-components`前提で
+  このプロジェクトの一貫したインラインstyle方針と合わないため採用せず、自前でUIを組んだ。
+- **Mobile**：AWSの公式RN SDKが無いため、**Expo Modules API**で`modules/chime-audio-call/`という
+  ローカルネイティブモジュールを新規作成し、iOS（Swift、実際の`AmazonChimeSDK.xcframework`の
+  `.swiftinterface`をXcodeビルド後に読んで正確なAPI形状を確認しながら実装）・
+  Android（Kotlin、`expo.modules.interfaces.permissions.Permissions`でマイク権限リクエストを
+  実装）双方のブリッジを書いた。ローカルモジュールは`apps/mobile/package.json`に
+  `"chime-audio-call": "file:./modules/chime-audio-call"`として追加し、
+  `expo-modules-autolinking`が自動検出する構成（`expo-module.config.json`の`platforms`は
+  このExpo SDK 51世代では`"ios"`表記が必要、`"apple"`表記だと検出されないことを実機検証で発見）。
+  `pod install`で実際に`AmazonChimeSDK 0.25.2`が解決されることを確認し、iOSシミュレータで
+  実機ビルド・起動まで確認した（ビルド中に`LogLevel.info`→`LogLevel.INFO`という実コンパイル
+  エラーを発見・修正）。**Androidはこのセッションにビルド環境が無く、コンパイル確認ができていない**
+  （ユーザーが`expo run:android`で確認する必要がある）。
+- **実機デプロイ・実機テストで発覚し修正した2件の実バグ**（いずれもユニットテストでは検出不可能）：
+  ①`InitiateCallFn`がCDKデフォルトの3秒Lambdaタイムアウトのままで、Chime API 2回・AppSync通知・
+  SNS publishを直列で呼ぶ実処理がコールドスタート時に間に合わずタイムアウトしていた
+  （`timeout: Duration.seconds(15)`を明示して解決）。②`amazon-chime-sdk-js`がNode.jsの`global`を
+  参照するが、Viteはデフォルトでポリフィルしないため、実際にChime Meetingへ参加しようとした瞬間に
+  `ReferenceError: global is not defined`で必ず失敗していた（`vite.config.ts`に
+  `define: { global: "globalThis" }`を追加して解決）。
+- 修正後、`OnConnect-dev`への再デプロイと、一時テストアカウントを使ったWeb版での実機確認
+  （発信→実際のChime Meeting/Attendee作成→クライアント側での実セッション参加→
+  ハングアップ→`CallLogs`への`missed`記録まで）を完了（コミット`0098d1a`・`f33383f`）。
+  **着信側の応答・通話中UI・実際の2者間音声疎通は、2つの同時ログインセッションを安定して
+  維持する手段がこのセッションの検証環境に無かったため未検証**（発信側の実処理は上記の通り
+  実機で確認済み）。iOS実機での2者間音声疎通・Android全般も未検証。
+  **これでPhase 11が完了し、Phase 1〜11が全て完了した**（残る検証はPhase 12着手前に
+  改めて実施することが望ましい）。
+
 ### 完了したフェーズ
 - **Phase 1（権限モデルの再設計）**：完了・ローカルテスト確認済み
 - **Phase 2（カレンダー独立DB化＋カテゴリー管理）**：完了・ローカルテスト確認済み
@@ -146,27 +190,48 @@ infra全117テスト・`cdk synth`・web build・mobile tscが通過し、`OnCon
   消えることを確認）。着手前は「実装済みだが未検証」と記録されていたが実際はスタブで、
   実質的に設計書5.2.2の初実装だった。詳細・実地検証で発見した3件の実バグは上記0章参照
   （独立した3章番号は割り当てていない）
+- **Phase 11（Amazon Chime SDK音声通話実装）**：完了・`OnConnect-dev`へデプロイ済み。発信側の
+  実処理（Chime Meeting作成〜クライアント参加〜CallLogs記録）はWeb版で実機確認済み、発見した
+  2件の実バグも修正済み。**着信応答・通話中UI・実際の2者間音声疎通、iOS実機・Android全般は
+  未検証**（次フェーズ着手前に改めて確認することが望ましい）。モバイルはネイティブ実装を選択、
+  `modules/chime-audio-call/`新設（iOS Swift/Android Kotlin）。詳細は上記0章参照
+  （独立した3章番号は割り当てていない）
 
-### Phase 11〜12（未着手、優先順に記載。詳細は8章参照）
-- **Phase 11: Amazon Chime SDK音声通話実装**（実機検証にAWSデプロイが必要）
-- **Phase 12: 実際のモバイルプッシュ配信**
+### Phase 12〜13（未着手、優先順に記載。詳細は8章参照）
+- **Phase 12: チャット・掲示板のファイル添付実装**（ユーザーからの要望、2026-08-07）
+  1. チャット機能の改修：ファイルの送受信を実装したい。モバイル版からの写真添付を
+     よく行う可能性がある（＝モバイルのカメラロール/カメラ連携を優先的に検討すること）
+  2. ファイル管理：ストレージとして無期限に使うわけではないため、チャット添付は期間限定
+     （例：1年）で自動削除して問題ない。**ただし掲示板にアップロードされた添付ファイルは
+     手動削除しない限り保存し続けたい**（チャットと掲示板で保持ポリシーを分ける）
+  3. セキュリティ：現状の構成（S3非公開＋SSE-S3暗号化＋HTTPS強制＋CloudFront OAC、
+     Cognito/IAM認証）で「特に大きな問題がなければこのままでOK」との回答。ただし設計書
+     （5.3.2）が謳う「署名付きURL（有効期限付き）配信」がCloudFront側に未実装（
+     `trustedKeyGroups`等が無い）という指摘は伝達済みで、実装時にはここも含めて対応する
+  既存基盤：`S3AttachmentsBucket`・`CloudFrontDistribution`は`StorageConstruct`で
+  プロビジョニング済み、`attachmentKeys?: string[]`は`Message`/`BulletinPost`型に既存。
+  ただし**S3へのアップロード・署名付きURL発行を行うLambdaコードは現状ゼロ**
+  （`S3Client`を使うコードがinfra全体に1つも無い）ため、実質新規実装。
+- **Phase 13: 実際のモバイルプッシュ配信**
 
 ### 現在のコミット状況
-Phase 1〜10まで全て**コミット済み・pushも完了済み**（直近のコミットハッシュ`238b184`まで、
+Phase 1〜11まで全て**コミット済み・pushも完了済み**（直近のコミットハッシュ`f33383f`まで、
 `git log`で確認すること。この間の詳細な変更内容は本ファイルに書ききれていないコミットもあるため、
 必ず`git log`を一次情報として確認すること）。
 
 ### AWSデプロイの状況
 `OnConnect-dev`スタックを`ap-northeast-1`（アカウント`978841974977`、SSOプロファイル`dev`）に
 デプロイ済みで**現在もAWS上にリソースが存在している**（Cognito・DynamoDB 16テーブル・AppSync・
-S3+CloudFront・EventBridge Scheduler・API Gateway一式。Phase 9で`BulletinCommentsTable`が
-追加され15→16に増加）。以降のセッションもこのdev環境に対してコードを変更したら
-都度`cdk deploy --profile dev --context envName=dev`で反映していく運用（destroyはしていない）。
-初回管理者アカウント（`loginId: staff01`、Cognito `AdminCreateUser`＋DynamoDB Usersテーブルへの
-直接`put-item`で作成、`RolePermissions`は全項目`true`）を作成済み。動作確認用に一時的に作成した
-2人目のテストユーザー（`staff02`）・テストチャットルーム・テストメッセージは確認後に削除済みで、
-現在Usersテーブルには`staff01`（テスト管理者）のみが存在する。継続利用する場合は
-`staff01`のログインID・表示名を実運用向けに整理するか、追加の管理者アカウントを作成すること。
+S3+CloudFront・EventBridge Scheduler・API Gateway一式）。以降のセッションもこのdev環境に対して
+コードを変更したら都度`cdk deploy --profile dev --context envName=dev`で反映していく運用
+（destroyはしていない）。初回管理者アカウント（`loginId: staff01`、Cognito `AdminCreateUser`＋
+DynamoDB Usersテーブルへの直接`put-item`で作成、`RolePermissions`は全項目`true`）を作成済み。
+**staff01のパスワードはPhase 11の実機確認のため`TempPass123!`にリセット済み**（元のパスワードが
+不明だったため。継続利用する場合は変更を検討すること）。動作確認用に一時的に作成した2人目の
+テストユーザー（Phase 10では`staff02`、Phase 11でも同名で再作成）・テストチャットルーム・
+テストメッセージ・テストCallLogは確認後に都度削除済みで、現在Usersテーブルには`staff01`
+（テスト管理者）のみが存在する。継続利用する場合は`staff01`のログインID・表示名を実運用向けに
+整理するか、追加の管理者アカウントを作成すること。
 **再デプロイ・スタック削除など今後のAWS操作も引き続き必ずユーザーの明示的な承認を得ること**
 （過去にAWS課金についての合意プロセスあり）。
 
@@ -921,13 +986,16 @@ Phase 9〜12は互いに強い依存関係は無く、着手順はユーザー�
   ゼロから実装した。EventBridge Schedulerでの登録/取消、このプロジェクト初のLambda→AppSync
   呼び出し（IAM署名）による配信、予約中メッセージの可視性フィルタ、取消UIの新設まで含めて
   設計書5.2.2を一通り実装し、実機で3件のバグを発見・修正した
-- **Phase 11: Amazon Chime SDK音声通話実装**
-  現状デモの着信画面遷移のみの`initiateCall.ts`を、Chime SDK Meetings API
-  （CreateMeeting/CreateAttendee）を呼ぶ実装に差し替え、web/mobileにChime SDKクライアントを
-  組み込む。Attendeeとユーザーの紐付けに実ユーザーIDが要るためPhase 8後が望ましい。
-  音声ストリームはローカルでは検証できないため、着手時にAWSデプロイの是非をユーザーに確認すること
-  （Phase1〜7は全てローカル`npm test`/`cdk synth`のみで確認してきた）
-- **Phase 12: 実際のモバイルプッシュ配信**
+- **Phase 11: Amazon Chime SDK音声通話実装 — 完了**（詳細は上記0章参照）
+  `initiateCall.ts`（`501`スタブ）を実装に差し替え、web/mobileにChime SDKクライアントを組み込んだ。
+  モバイルはユーザーの明示的な選択でネイティブ実装（Expo Modules API、iOS Swift/Android Kotlin）。
+  発信側の実処理はWeb版で実機確認済み、実機デプロイで発覚した2件の実バグも修正済み。着信応答・
+  通話中UI・2者間音声疎通・iOS実機・Android全般は未検証のまま残っている
+- **Phase 12: チャット・掲示板のファイル添付実装**（詳細は上記3章「完了したフェーズ」直下参照）
+  ユーザー要望（2026-08-07）：モバイルからの写真添付を優先、チャット添付は期間限定
+  （例：1年）で自動削除可、掲示板添付は手動削除以外では保持し続ける、セキュリティは現状維持でOK
+  （ただしCloudFrontの署名付きURL未実装という指摘は認識済み）
+- **Phase 13: 実際のモバイルプッシュ配信**
   SNSトピックへのpublishはPhase5・6で実装済み。不足しているのはAPNs/FCM向けのSNS Platform
   Application、デバイストークンの登録エンドポイント（`expo-notifications`は
   `apps/mobile/package.json`に導入済み・未使用）、ユーザーID⇔デバイストークンの紐付け。Phase 8後
