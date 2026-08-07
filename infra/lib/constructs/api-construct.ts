@@ -1,4 +1,5 @@
 import { Construct } from "constructs";
+import { Duration } from "aws-cdk-lib";
 import * as path from "path";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as appsync from "aws-cdk-lib/aws-appsync";
@@ -228,6 +229,9 @@ export class ApiConstruct extends Construct {
       entry: path.join(__dirname, "../../lambda/calls/initiateCall.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
+      // 発信時にChime CreateMeeting/CreateAttendee×2・AppSync通知・SNS publishを直列で呼ぶため、
+      // デフォルトの3秒では特にコールドスタート時に間に合わない（実機テストでタイムアウトを確認）
+      timeout: Duration.seconds(15),
       environment: {
         CALL_LOGS_TABLE_NAME: props.callLogsTable.tableName,
         USERS_TABLE_NAME: props.usersTable.tableName,
