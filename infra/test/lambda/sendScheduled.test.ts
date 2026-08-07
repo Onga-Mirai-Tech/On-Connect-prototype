@@ -3,7 +3,6 @@ process.env.CHAT_API_URL = "https://example.appsync-api.ap-northeast-1.amazonaws
 
 import { mockClient } from "aws-sdk-client-mock";
 import { DynamoDBDocumentClient, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import type { ScheduledEvent } from "aws-lambda";
 
 const callAppSyncGraphQL = jest.fn();
 jest.mock("../../lambda/common/appsyncSigner", () => ({
@@ -15,11 +14,11 @@ const { handler } = require("../../lambda/messages/sendScheduled");
 
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-function buildEvent(): ScheduledEvent<{ roomId: string; messageId: string }> {
-  return { detail: { roomId: "room-1", messageId: "msg-1" } } as ScheduledEvent<{
-    roomId: string;
-    messageId: string;
-  }>;
+// EventBridge SchedulerがLambdaターゲットを直接起動する場合、Target.Inputで指定したJSONは
+// event.detailにラップされず、そのままイベントオブジェクトとして渡される（.detailラップは
+// EventBridge Rules経由の呼び出しの場合のみ。実デプロイでの実地検証で発覚した実際の形）
+function buildEvent(): { roomId: string; messageId: string } {
+  return { roomId: "room-1", messageId: "msg-1" };
 }
 
 beforeEach(() => {

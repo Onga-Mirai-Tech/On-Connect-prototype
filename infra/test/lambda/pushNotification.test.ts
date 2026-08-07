@@ -130,6 +130,15 @@ test("INSERT以外のイベント（MODIFY等）は無視する", async () => {
   expect(snsMock.commandCalls(PublishCommand)).toHaveLength(0);
 });
 
+test("予約登録した瞬間（INSERT: status scheduled）は通知しない（Phase 10、実地検証で発覚したバグ）", async () => {
+  mockUsers([{ userId: "member-2", notificationStatus: "ON" }]);
+  const message = buildMessage({ status: "scheduled", scheduledAt: "2026-08-07T15:30:00+09:00" });
+
+  await handler(buildEvent(message), {} as never, (() => {}) as never);
+
+  expect(snsMock.commandCalls(PublishCommand)).toHaveLength(0);
+});
+
 test("予約送信の配信（MODIFY: status scheduled→sent）は通知対象になる（Phase 10）", async () => {
   mockUsers([
     { userId: "member-2", notificationStatus: "ON" },

@@ -23,7 +23,19 @@ type Reaction {
 }
 
 type Message {
-  messageId: ID!
+  """
+  deliverScheduledMessage（Phase 10）がIAM署名で呼ぶ際、レスポンスでこのフィールドのみを
+  参照するため@aws_iamを付与する（フィールド単位の認可はMutation本体とは別に、
+  レスポンスの選択フィールドごとにも必要だったため実地検証で判明。他のフィールドは
+  Cognito User Poolのデフォルト認証のみで変更なし）。
+  **重要**：ディレクティブを1つでも付けると「暗黙のデフォルト認証」は失われ、
+  明示した認証モードのみが有効になる。そのため通常のCognito認証での参照
+  （web/mobileの全チャットクエリがmessageIdを参照する）を壊さないよう、
+  @aws_cognito_user_poolsも明示的に併記する必要がある
+  （実地検証で発覚：@aws_iamのみを付けた結果、通常ユーザーの全チャット取得が
+  "Not Authorized to access messageId on type Message"で軒並み失敗する重大な退行を起こした）
+  """
+  messageId: ID! @aws_iam @aws_cognito_user_pools
   roomId: ID!
   senderId: ID!
   body: String!
@@ -90,9 +102,13 @@ type Mutation {
   予約送信メッセージの配信トリガー（Phase 10）。sendScheduled.tsがEventBridge Schedulerから
   起動された際、Messagesテーブルの直接UpdateItemでstatusを更新した後、IAM署名付きでこの
   ミューテーションを呼び出す。実体は単純なGetItem（再更新はしない）で、onMessageSent購読を
-  発火させてチャットルームへリアルタイム配信するためだけに存在する
+  発火させてチャットルームへリアルタイム配信するためだけに存在する。
+  他のフィールドは指定が無ければデフォルト認証（Cognito User Pool）のみが有効だが、これは
+  IAM署名で呼び出すため@aws_iamを明示する必要がある（実地検証で"Not Authorized"エラーとして発覚。
+  additionalAuthorizationModesを追加しただけではフィールド単位では有効化されず、
+  ディレクティブでの明示指定が必須という仕様だった）
   """
-  deliverScheduledMessage(roomId: ID!, messageId: ID!): Message!
+  deliverScheduledMessage(roomId: ID!, messageId: ID!): Message! @aws_iam
 }
 
 type Subscription {

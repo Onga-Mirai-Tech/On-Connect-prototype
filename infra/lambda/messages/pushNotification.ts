@@ -20,14 +20,19 @@ const PUSH_TOPIC_ARN = process.env.PUSH_TOPIC_ARN!;
  * 音声通話の着信通知は本Lambdaの対象外（calls側で別途、例外なくnotificationStatusを尊重する）。
  * 予約送信（Phase 10）が実際に配信されるのは`sendScheduled.ts`によるUpdateItem（status:
  * scheduled→sent）のタイミングであり、これはMODIFYイベントとして届く。INSERT時点
- * （＝予約登録した瞬間）では通知しないのが正しいため、MODIFYはこの遷移の場合のみ通す。
+ * （＝予約登録した瞬間）では通知しないのが正しいため、INSERTでもstatus: scheduledの間は
+ * 除外し、MODIFYはscheduled→sentの遷移の場合のみ通す
+ * （実地検証で発覚：INSERT時点のstatusを見ずに常に通知していたため、予約登録した瞬間に
+ * 誤って通知が飛んでいた）。
  */
 export const handler: DynamoDBStreamHandler = async (event) => {
   for (const record of event.Records) {
     if (!record.dynamodb?.NewImage) continue;
-    if (record.eventName !== "INSERT" && !isScheduledMessageDelivery(record)) continue;
 
     const message = unmarshall(record.dynamodb.NewImage as Record<string, AttributeValue>) as Message;
+    const isImmediateInsert = record.eventName === "INSERT" && message.status !== "scheduled";
+    if (!isImmediateInsert && !isScheduledMessageDelivery(record)) continue;
+
     const targetUserIds = await resolveTargetUserIds(message);
     if (targetUserIds.length === 0) continue;
 

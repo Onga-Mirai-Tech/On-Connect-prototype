@@ -1,5 +1,5 @@
 import { UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import type { ScheduledHandler } from "aws-lambda";
+import type { Handler } from "aws-lambda";
 import { docClient } from "../common/dynamo";
 import { callAppSyncGraphQL } from "../common/appsyncSigner";
 
@@ -26,9 +26,15 @@ const deliverScheduledMessageMutation = `mutation DeliverScheduledMessage($roomI
  * onMessageSent購読を発火させてチャットルームへリアルタイム配信する（設計書5.2.2手順3）。
  * プッシュ通知自体はMessagesテーブルのStreamsをトリガーにpushNotification.ts側が処理する
  * （このLambdaはstatus更新と配信トリガーのみを担う）。
+ *
+ * 注：EventBridge SchedulerがLambdaターゲットを直接起動する場合、Target.Inputに指定したJSONは
+ * `event.detail`にラップされず、そのままイベントオブジェクトそのものとして渡される
+ * （`.detail`ラップはEventBridge Rules＝イベントバス経由の呼び出しの場合の話で、Scheduler直起動には
+ * 適用されない。実デプロイでの実地検証で発覚：`ScheduledHandler`型を使い`event.detail`を
+ * 参照していたため、実際には`event.detail`がundefinedとなり毎回失敗していた）。
  */
-export const handler: ScheduledHandler<ScheduledMessagePayload> = async (event) => {
-  const { roomId, messageId } = event.detail;
+export const handler: Handler<ScheduledMessagePayload, void> = async (event) => {
+  const { roomId, messageId } = event;
 
   try {
     await docClient.send(
