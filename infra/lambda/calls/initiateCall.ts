@@ -22,8 +22,15 @@ const MEDIA_REGION = "ap-northeast-1";
 
 const chimeClient = new ChimeSDKMeetingsClient({ region: MEDIA_REGION });
 
+/**
+ * onIncomingCall購読側（callClient.ts）が要求する全フィールドを選択する必要がある。
+ * AppSyncは「ミューテーション呼び出し側が選択しなかったフィールドは購読側にも配信しない」仕様のため、
+ * ここでcallIdのみを選択すると非null必須の他フィールド（calleeId等）を購読側へ配信できず、
+ * onIncomingCall購読が（エラーにもならず）沈黙して着信通知が一切届かなくなる
+ * （Phase 8dで発覚したsendMessageの同種バグと同じ原因、Phase 11実装時は未対応だった）。
+ */
 const notifyIncomingCallMutation = `mutation NotifyIncomingCall($input: NotifyIncomingCallInput!) {
-  notifyIncomingCall(input: $input) { callId }
+  notifyIncomingCall(input: $input) { callId callerId callerName calleeId meetingJson calleeAttendeeJson }
 }`;
 
 /**

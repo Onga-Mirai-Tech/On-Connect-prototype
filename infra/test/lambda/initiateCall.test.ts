@@ -131,9 +131,15 @@ describe("POST /calls", () => {
     expect(body.callerAttendee).toEqual({ Attendee: { AttendeeId: "attendee-caller", ExternalUserId: "caller-1" } });
 
     expect(callAppSyncGraphQL).toHaveBeenCalledTimes(1);
-    const [, , variables] = callAppSyncGraphQL.mock.calls[0] as [string, string, { input: Record<string, unknown> }];
+    const [, query, variables] = callAppSyncGraphQL.mock.calls[0] as [string, string, { input: Record<string, unknown> }];
     expect(variables.input.calleeId).toBe("callee-1");
     expect(variables.input.callerName).toBe("田中");
+    // AppSyncは呼び出し側が選択しなかったフィールドを購読側へ配信しない仕様のため、
+    // onIncomingCall購読（callClient.ts）が要求する全フィールドをここで選択している必要がある
+    // （実機検証で発覚：callIdのみ選択していたため着信通知が購読側に一切届かなかった）
+    for (const field of ["callId", "callerId", "callerName", "calleeId", "meetingJson", "calleeAttendeeJson"]) {
+      expect(query).toContain(field);
+    }
 
     expect(snsMock.commandCalls(PublishCommand)).toHaveLength(1);
     const payload = JSON.parse(snsMock.commandCalls(PublishCommand)[0].args[0].input.Message as string);
