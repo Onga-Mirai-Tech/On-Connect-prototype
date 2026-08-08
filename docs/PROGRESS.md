@@ -952,6 +952,20 @@ Phase 12の実機検証では、curlでの直接API検証用に一時的にS3へ
       書き込み系操作はweb側で既に確認済みのため対象外とした）、Android実機/エミュレータでの確認
     - テスト：修正後`npm test --workspace infra`（101件）・`npm run build --workspace apps/web`・
       `npx tsc --noEmit`（mobile）で確認
+37. **【`BulletinFn`/`ToggleMessageReactionFn`バンドルサイズ肥大化バグ修正】**：Phase 12の副次的な
+    発見（0章参照）として記録されていた潜在バグに対応した。原因はPhase 6で発覚した問題
+    （28.参照）と全く同根：`infra/lambda/bulletin/crud.ts`・`infra/lambda/messages/toggleReaction.ts`
+    がともに`toggleReaction`関数を`@on-connect/shared`のバレル(`index.ts`)経由でimportしており、
+    同バレルが`export * from "./holidays"`しているためtree-shake不可なCJSライブラリ
+    `@holiday-jp/holiday_jp`（1.4MB）が丸ごとバンドルされていた。Phase 6でも同じ問題が
+    `calendar/crud.ts`で発生し、バレルを経由せず`@on-connect/shared/src/ics`から直接importする形で
+    解決済みだったが、その教訓がPhase 9で新設された`bulletin/crud.ts`・`messages/toggleReaction.ts`の
+    `toggleReaction` importには適用されていなかった。修正は両ファイルのimport元を
+    `@on-connect/shared`から`@on-connect/shared/src/mockData`（`toggleReaction`の定義元）に
+    変更する2行のみ。`cdk synth`で実際のバンドルサイズを確認：`BulletinFn`は285KB→21KB、
+    `ToggleMessageReactionFn`は272KB→7.6KBに縮小し、両方から`holiday_jp`文字列が消えたことを確認した。
+    infra全161テスト・`cdk synth`・web build・mobile tscが通過。**コード修正のみでコミット・
+    `OnConnect-dev`への再デプロイは未実施**（次回デプロイ時にあわせて反映する）
 
 ## 4. 現在のダミー登録ユーザーの設定
 

@@ -3,7 +3,7 @@ import type { APIGatewayProxyEvent, APIGatewayProxyHandler } from "aws-lambda";
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { S3Client, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import type { AttachmentRef, BulletinCategory, BulletinComment, BulletinPost, User } from "@on-connect/shared";
-import { toggleReaction } from "@on-connect/shared";
+import { toggleReaction } from "@on-connect/shared/src/mockData";
 import { requirePermission } from "../common/authz";
 import { docClient, isTableEmpty } from "../common/dynamo";
 import {

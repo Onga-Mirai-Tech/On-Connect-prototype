@@ -1,7 +1,7 @@
 import { GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { AppSyncResolverHandler } from "aws-lambda";
 import type { Message } from "@on-connect/shared";
-import { toggleReaction } from "@on-connect/shared";
+import { toggleReaction } from "@on-connect/shared/src/mockData";
 import { docClient } from "../common/dynamo";
 
 const MESSAGES_TABLE_NAME = process.env.MESSAGES_TABLE_NAME!;
