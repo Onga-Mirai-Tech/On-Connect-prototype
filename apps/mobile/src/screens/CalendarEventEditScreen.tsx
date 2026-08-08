@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { useHeaderHeight } from "@react-navigation/elements";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { mockCalendarEvents, type CalendarEvent } from "@on-connect/shared";
 import type { CalendarStackParamList } from "../navigation/AppNavigator";
@@ -15,6 +16,7 @@ type Props = NativeStackScreenProps<CalendarStackParamList, "CalendarEventEdit">
  * 無かったため、既存値をそのまま送信する（新規作成時は先頭カテゴリー・全体公開）
  */
 export function CalendarEventEditScreen({ route, navigation }: Props) {
+  const headerHeight = useHeaderHeight();
   const { eventId } = route.params;
   const { memberCategories, calendarCategories } = useOrgData();
   const [existingEvent, setExistingEvent] = useState<CalendarEvent | undefined>(undefined);
@@ -70,40 +72,47 @@ export function CalendarEventEditScreen({ route, navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.label}>タイトル</Text>
-      <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="例）定例会議" />
-      <Text style={styles.label}>説明（任意）</Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        value={description}
-        onChangeText={setDescription}
-        multiline
-      />
-      <Text style={styles.label}>開始日時（YYYY-MM-DDTHH:mm）</Text>
-      <TextInput style={styles.input} value={startAt} onChangeText={setStartAt} placeholder="2026-08-05T17:30" />
-      <Text style={styles.label}>終了日時（YYYY-MM-DDTHH:mm）</Text>
-      <TextInput style={styles.input} value={endAt} onChangeText={setEndAt} placeholder="2026-08-05T18:30" />
-      <Text style={styles.label}>
-        表示カテゴリー：{calendarCategories.find((c) => c.categoryId === existingEvent?.categoryId)?.name ??
-          calendarCategories[0]?.name}
-      </Text>
-      <Text style={styles.label}>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</Text>
-      {memberCategories.map((c) => (
-        <Text key={c.categoryId} style={styles.category}>
-          {existingEvent?.visibleCategoryIds.includes(c.categoryId) ? "☑" : "☐"} {c.name}
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={headerHeight}
+    >
+      <ScrollView style={styles.flex} contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <Text style={styles.label}>タイトル</Text>
+        <TextInput style={styles.input} value={title} onChangeText={setTitle} placeholder="例）定例会議" />
+        <Text style={styles.label}>説明（任意）</Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          value={description}
+          onChangeText={setDescription}
+          multiline
+        />
+        <Text style={styles.label}>開始日時（YYYY-MM-DDTHH:mm）</Text>
+        <TextInput style={styles.input} value={startAt} onChangeText={setStartAt} placeholder="2026-08-05T17:30" />
+        <Text style={styles.label}>終了日時（YYYY-MM-DDTHH:mm）</Text>
+        <TextInput style={styles.input} value={endAt} onChangeText={setEndAt} placeholder="2026-08-05T18:30" />
+        <Text style={styles.label}>
+          表示カテゴリー：{calendarCategories.find((c) => c.categoryId === existingEvent?.categoryId)?.name ??
+            calendarCategories[0]?.name}
         </Text>
-      ))}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable style={styles.saveButton} onPress={handleSave} disabled={saving}>
-        <Text style={styles.saveButtonText}>保存</Text>
-      </Pressable>
-    </View>
+        <Text style={styles.label}>閲覧可能なメンバーカテゴリ（未選択なら全体公開）</Text>
+        {memberCategories.map((c) => (
+          <Text key={c.categoryId} style={styles.category}>
+            {existingEvent?.visibleCategoryIds.includes(c.categoryId) ? "☑" : "☐"} {c.name}
+          </Text>
+        ))}
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Pressable style={styles.saveButton} onPress={handleSave} disabled={saving}>
+          <Text style={styles.saveButtonText}>保存</Text>
+        </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
+  flex: { flex: 1 },
+  container: { padding: 16 },
   label: { fontWeight: "600", marginTop: 16, marginBottom: 8 },
   input: { backgroundColor: "#F4FFFB", borderRadius: 12, padding: 10 },
   multiline: { minHeight: 72, textAlignVertical: "top" },

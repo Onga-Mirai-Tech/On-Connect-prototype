@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, Switch, StyleSheet, FlatList } from "react-native";
+import { View, Text, TextInput, Pressable, Switch, StyleSheet, FlatList, KeyboardAvoidingView, Platform } from "react-native";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -36,6 +37,7 @@ function upsertMessage(messages: Message[], incoming: Message): Message[] {
  * フォールバック）。Phase 9：リアクションもAPIに接続。
  */
 export function ChatRoomScreen({ route, navigation }: Props) {
+  const headerHeight = useHeaderHeight();
   const { currentUserId } = useAuth();
   const { members } = useOrgData();
   const { roomId } = route.params;
@@ -202,7 +204,11 @@ export function ChatRoomScreen({ route, navigation }: Props) {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={headerHeight}
+    >
       <View style={styles.header}>
         <View style={styles.headerInfo}>
           <Text style={styles.title}>{roomTitle}</Text>
@@ -330,7 +336,7 @@ export function ChatRoomScreen({ route, navigation }: Props) {
           <Text style={styles.sendButtonText}>送信</Text>
         </Pressable>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, Platform, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, FlatList, Platform, StyleSheet, KeyboardAvoidingView } from "react-native";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { Ionicons } from "@expo/vector-icons";
 import { WebView } from "react-native-webview";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -26,6 +27,7 @@ type Props = NativeStackScreenProps<BulletinStackParamList, "BulletinDetail">;
  * フォールバック、他の画面と同じ方針）。
  */
 export function BulletinDetailScreen({ route, navigation }: Props) {
+  const headerHeight = useHeaderHeight();
   const { currentUserId } = useAuth();
   const { members, bulletinCategories } = useOrgData();
   const memberName = (userId: string) => members.find((m) => m.userId === userId)?.displayName ?? userId;
@@ -97,74 +99,82 @@ export function BulletinDetailScreen({ route, navigation }: Props) {
   };
 
   return (
-    <FlatList
-      style={styles.container}
-      data={comments}
-      keyExtractor={(item) => item.commentId}
-      ListHeaderComponent={
-        <View>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>{post.title}</Text>
-            <Pressable
-              onPress={() => navigation.navigate("BulletinEdit", { postId: post.postId })}
-              style={styles.editButton}
-            >
-              <Ionicons name="pencil-outline" size={14} color={colors.brandDark} />
-              <Text style={styles.editText}>編集</Text>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={headerHeight}
+    >
+      <FlatList
+        style={styles.container}
+        keyboardShouldPersistTaps="handled"
+        data={comments}
+        keyExtractor={(item) => item.commentId}
+        ListHeaderComponent={
+          <View>
+            <View style={styles.headerRow}>
+              <Text style={styles.title}>{post.title}</Text>
+              <Pressable
+                onPress={() => navigation.navigate("BulletinEdit", { postId: post.postId })}
+                style={styles.editButton}
+              >
+                <Ionicons name="pencil-outline" size={14} color={colors.brandDark} />
+                <Text style={styles.editText}>編集</Text>
+              </Pressable>
+            </View>
+            <View style={styles.metaRow}>
+              {categoryName(post.categoryId) === "緊急連絡" && (
+                <Ionicons name="alert-circle-outline" size={12} color={colors.danger} />
+              )}
+              <Text style={styles.metaText}>
+                {categoryName(post.categoryId)} ・ {post.createdAt.slice(0, 10)}
+                {post.visibleCategoryIds.length > 0 ? " ・公開範囲限定" : ""}
+              </Text>
+            </View>
+            <View style={styles.bodyBox}>
+              {Platform.OS === "web" ? (
+                <Text>{post.body.replace(/<[^>]+>/g, " ")}</Text>
+              ) : (
+                <WebView
+                  originWhitelist={["*"]}
+                  source={{ html: `<html><body style="font-family:-apple-system,sans-serif;font-size:14px;margin:0;">${post.body}</body></html>` }}
+                  style={styles.webview}
+                />
+              )}
+            </View>
+            <AttachmentPreview attachments={post.attachments} context="bulletin" ownerId={post.postId} />
+            <View style={styles.reactionRow}>
+              <ReactionBar reactions={post.reactions} currentUserId={currentUserId ?? ""} onToggle={handleToggleReaction} />
+            </View>
+            <Text style={styles.commentsHeading}>コメント（{comments.length}）</Text>
+          </View>
+        }
+        ListEmptyComponent={<Text style={styles.emptyComments}>コメントはまだありません。</Text>}
+        renderItem={({ item }) => (
+          <View style={styles.commentRow}>
+            <Text style={styles.commentAuthor}>{memberName(item.authorId)}</Text>
+            <Text style={styles.commentBody}>{item.body}</Text>
+          </View>
+        )}
+        ListFooterComponent={
+          <View style={styles.commentForm}>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="コメントを入力"
+              value={commentBody}
+              onChangeText={setCommentBody}
+            />
+            <Pressable onPress={handleAddComment} style={styles.commentSendButton}>
+              <Ionicons name="send-outline" size={16} color={colors.text} />
             </Pressable>
           </View>
-          <View style={styles.metaRow}>
-            {categoryName(post.categoryId) === "緊急連絡" && (
-              <Ionicons name="alert-circle-outline" size={12} color={colors.danger} />
-            )}
-            <Text style={styles.metaText}>
-              {categoryName(post.categoryId)} ・ {post.createdAt.slice(0, 10)}
-              {post.visibleCategoryIds.length > 0 ? " ・公開範囲限定" : ""}
-            </Text>
-          </View>
-          <View style={styles.bodyBox}>
-            {Platform.OS === "web" ? (
-              <Text>{post.body.replace(/<[^>]+>/g, " ")}</Text>
-            ) : (
-              <WebView
-                originWhitelist={["*"]}
-                source={{ html: `<html><body style="font-family:-apple-system,sans-serif;font-size:14px;margin:0;">${post.body}</body></html>` }}
-                style={styles.webview}
-              />
-            )}
-          </View>
-          <AttachmentPreview attachments={post.attachments} context="bulletin" ownerId={post.postId} />
-          <View style={styles.reactionRow}>
-            <ReactionBar reactions={post.reactions} currentUserId={currentUserId ?? ""} onToggle={handleToggleReaction} />
-          </View>
-          <Text style={styles.commentsHeading}>コメント（{comments.length}）</Text>
-        </View>
-      }
-      ListEmptyComponent={<Text style={styles.emptyComments}>コメントはまだありません。</Text>}
-      renderItem={({ item }) => (
-        <View style={styles.commentRow}>
-          <Text style={styles.commentAuthor}>{memberName(item.authorId)}</Text>
-          <Text style={styles.commentBody}>{item.body}</Text>
-        </View>
-      )}
-      ListFooterComponent={
-        <View style={styles.commentForm}>
-          <TextInput
-            style={styles.commentInput}
-            placeholder="コメントを入力"
-            value={commentBody}
-            onChangeText={setCommentBody}
-          />
-          <Pressable onPress={handleAddComment} style={styles.commentSendButton}>
-            <Ionicons name="send-outline" size={16} color={colors.text} />
-          </Pressable>
-        </View>
-      }
-    />
+        }
+      />
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: { flex: 1, padding: 16 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
   title: { flex: 1, fontSize: 20, fontWeight: "700", marginRight: 8 },
