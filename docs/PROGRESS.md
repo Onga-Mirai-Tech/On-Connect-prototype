@@ -1,5 +1,4 @@
-# On-Connect 実装進捗まとめ（〜2026-08-08時点、Phase 12完了・Phase 1〜12全フェーズ完了・
-モバイルのキーボード被りバグ修正済み・Phase 13未着手）
+# On-Connect 実装進捗まとめ（〜2026-08-08時点、Phase 1〜13全フェーズ完了・デプロイ済み）
 
 このファイルは、コンテキストウィンドウのリセットに備えて、これまでの会話で決まったこと・作った物・
 残っている作業を1つにまとめたものです。新しいセッションではまず本ファイルと
@@ -326,10 +325,24 @@ Chime Meetingへの参加処理が開始されることを確認した**。た�
   （独立した3章番号は割り当てていない、実装計画は
   `/Users/ikkounobuyuki/.claude/plans/serene-splashing-catmull.md`参照）
 
-### Phase 13（未着手）
-- **Phase 13: 実際のモバイルプッシュ配信**（詳細は8章参照）。SNSトピックへのpublishは
-  Phase 5・6で実装済み。不足しているのはAPNs/FCM向けのSNS Platform Application、
-  デバイストークンの登録エンドポイント、ユーザーID⇔デバイストークンの紐付け
+### Phase 13（完了・デプロイ済み）
+**Phase 13: 実際のモバイルプッシュ配信**（詳細は3章40.参照）。設計書は「Amazon Pinpoint /
+Amazon SNS」を想定していたが、証明書管理が不要でこのExpoベースのプロジェクトと親和性が高い
+**Expo Push Notification Service**方式を採用（ユーザーと協議の上での意図的な逸脱）。
+`PUT /users/{userId}/push-token`（本人のみ、管理者権限不要）で登録し、新規Lambda
+`deliverPush.ts`がSNS `PushNotificationsTopic`をsubscribeしてExpoのPush APIへ直接配信する
+（従来Phase 5・6でpublishまでは実装済みだったが、サブスクライバーが1つも無く実際にはどの端末
+にも配信されていなかった）。EASプロジェクト（`@onga-mirai-tech/on-connect`）を新規作成し
+`app.json`にprojectIdを追加済み。あわせて、通知ON/OFFトグルがバックエンドに一切保存されず
+ローカルstateのみで消えていた既存の不具合（web/mobile両方）も解消した。
+**`OnConnect-dev`へデプロイ済み**（IAM変更・新規Lambda・SNSサブスクリプション・新規APIルート
+のみ、破壊的変更なし）。curlでの実機検証で`PUT /users/{userId}/push-token`の疎通、
+`deliverPush.ts`が実際にExpo Push APIを呼び出すこと（CloudWatch Logsでエラー無く完了）、
+ダミートークンが`DeviceNotRegistered`としてExpo側から返され自動的にDynamoDBから削除される
+プルーニング機能まで確認済み。**実機での通知タップ→画面遷移、および実際のExpo Push経由での
+配信そのもの（本物の端末トークンでの受信）はこのセッションでは未検証**（iOSシミュレータでは
+`xcrun simctl push`でのローカル注入によりフォアグラウンド/ホーム画面での通知表示までは
+確認できたが、タップでの遷移確認はツールの往復レイテンシで通知バナーが自動消滅し実演できず）
 - **残る未検証項目**（いずれもブロッカーではないが、次回セッションで実機がある環境で
   確認することが望ましい）：
   1. Phase 11：実際の2者間音声疎通（自動化ブラウザにマイク権限が無く検証不可だった。
@@ -340,15 +353,17 @@ Chime Meetingへの参加処理が開始されることを確認した**。た�
   4. モバイルのキーボード被りバグ修正（3章38.）：掲示板・カレンダー編集画面はコード上
      チャット画面と同一パターンで修正したが、ユーザーによる実機目視確認はチャット画面のみ
      完了。掲示板・カレンダーの確認が望ましい
+  5. Phase 13：実機での本物のExpo Push経由の配信・通知タップでの画面遷移（上記参照）
 - **iOSシミュレータ自動操作の既知の制約**（3章38.に詳細）：`mcp__Claude_Code_iOS_Simulator__control`
   はタップによる画面遷移は概ね機能するが、**TextInputへのタップ→フォーカス→文字入力が
   一貫して機能しない**（ごく単純なログイン画面でも再現）。この制約がある限り、モバイルの
   フォーム入力を伴う機能の自動検証はできず、ユーザーによる手動確認が必要
 
 ### 現在のコミット状況
-Phase 1〜12まで、および本セッションで発見・修正した2件のバグ（`BulletinFn`等のバンドル
-肥大化・モバイルのキーボード被り）まで**すべてコミット済み・pushも完了済み**
-（直近のコミットハッシュ`48083b2`）。`git log`・`git status`で必ず最新状態を確認すること。
+Phase 1〜13まで、および本セッションで発見・修正したバグ（`BulletinFn`等のバンドル肥大化・
+モバイルのキーボード被り・改行消失・通知ON/OFFトグル未保存）まで**すべてコミット済み・
+push・デプロイも完了済み**（直近のコミットハッシュ`4404a06`）。`git log`・`git status`で
+必ず最新状態を確認すること。
 
 ### AWSデプロイの状況
 `OnConnect-dev`スタックを`ap-northeast-1`（アカウント`978841974977`、SSOプロファイル`dev`）に
@@ -369,7 +384,11 @@ Phase 12の実機検証では、curlでの直接API検証用に一時的にS3へ
 2者間通話検証用に同名で再作成→未使用のまま確認後にCognito・DynamoDB双方から削除済み）は
 現在存在せず、Usersテーブルには`staff01`（テスト管理者）のみが存在する。
 継続利用する場合は`staff01`のログインID・表示名を実運用向けに
-整理するか、追加の管理者アカウントを作成すること。Phase 11の2ユーザー同時ログイン検証では
+整理するか、追加の管理者アカウントを作成すること。Phase 13の実機検証では、curlでの疎通確認用に
+`staff01`へダミーのExpoプッシュトークンを一時登録し（`deliverPush.ts`が実際にトークンを
+`DeviceNotRegistered`として自動削除する動作まで確認できたため、現在`staff01`に
+`expoPushToken`は残っていない）、掲示板へのテスト投稿（「Phase13 push配信テスト」、
+作成→push配信確認→**削除済み**）を行った。Phase 11の2ユーザー同時ログイン検証では
 `apps/web`のVite dev serverを一時的に2インスタンス（ポート5173/5174）起動する方式を使ったが、
 検証後に`.claude/launch.json`への追加設定は削除済み（同一オリジンだとAmplifyセッションが
 共有され2ユーザー同時ログインできないための一時的な対処、恒久的な設定ではない）。
@@ -1047,6 +1066,65 @@ Phase 12の実機検証では、curlでの直接API検証用に一時的にS3へ
       画面上の改行として表示されることを確認済み
     - `npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）通過。infra側の変更は無し
     - **コミット済み（`bef4e90`）・push済み**
+40. **【Phase 13：実際のモバイルプッシュ配信、Expo Push Notification Service】**：
+    設計書5.2.4等が想定する「Amazon Pinpoint / Amazon SNS」ではなく、証明書管理（APNs認証キー・
+    FCMサーバーキー）が不要でこのExpoベースのプロジェクトと親和性が高い**Expo Push Notification
+    Service**を採用することにユーザーと合意した（意図的な設計逸脱、Phase 12のCloudFront方針転換と
+    同種の判断）。着手前の調査で、Phase 5・6で実装済みだった`publishPush`（SNSトピックへのpublish）
+    には**サブスクライバーが1つも存在せず**、これまで一度も実際の端末に配信されていなかったことが
+    判明した（`notification-construct.ts`のdocコメントに「デバイストークン登録実装後に接続する」と
+    明記されていた、意図された未着手部分）。実装はPlan modeで計画を立ててから着手した。
+    - **EASプロジェクト新規作成**：ユーザーがExpoアカウントを新規作成、`npx eas-cli login`
+      （ブラウザ認証）→`npx eas init --account onga-mirai-tech`で`@onga-mirai-tech/on-connect`
+      プロジェクトを作成し、`app.json`に`extra.eas.projectId`が追記された
+      （`getExpoPushTokenAsync()`に必須）
+    - **バックエンド**：新規`PUT /users/{userId}/push-token`（`infra/lambda/users/index.ts`に
+      `updatePushToken`ハンドラー追加。本人のみ、`manageUsers`権限は不要。既存の
+      `updateUser`の`notificationStatus`限定カーブアウトとは別の専用エンドポイントとして新設し、
+      `updateUser`の権限判定ロジックには手を入れていない）。新規Lambda
+      `infra/lambda/notifications/deliverPush.ts`が`PushNotificationsTopic`をsubscribeし、
+      `targetUserIds`をUsersTableの`expoPushToken`へ解決した上でExpoのPush API
+      （`https://exp.host/--/api/v2/push/send`）へNode.js 24ランタイムの素の`fetch`で直接POST
+      する（`expo-server-sdk`等の追加依存は入れず、`appsyncSigner.ts`と同じ軽量な自前実装方針）。
+      ticketが`DeviceNotRegistered`のトークンはその場で削除する（receiptポーリングによる
+      2段階目の配信確認はこの規模のMVPとしてはスコープ外と判断、既知の簡略化として記録）。
+      `publishPush`呼び出し元4箇所のうちチャット（`pushNotification.ts`）のみ、送信者displayName・
+      本文プレビューをpayloadに追加（`deliverPush.ts`が再度DB参照せずに済むよう。他3箇所は
+      既存のtitle/callerName等で足りるため変更不要）
+    - **モバイル**：新規`apps/mobile/src/api/pushNotifications.ts`
+      （`registerForPushNotificationsAsync`：許可確認→Androidチャンネル設定→トークン取得→
+      `orgApi.updatePushToken`で登録、失敗は全て静かに無視）。`AuthContext.tsx`の`loadSession`
+      （起動時のセッション復元・ログイン成功のいずれも通る唯一の箇所）から1箇所でfire-and-forget
+      呼び出し。`signOut`時はトークンをクリア（null送信）。`App.tsx`にフォアグラウンド通知の
+      表示ハンドラーを追加。`AppNavigator.tsx`にPhase 11の着信リスナーと全く同じ
+      `navigationRef`パターンで通知タップ時のリスナーを追加し、`data.type`に応じて該当画面
+      （チャットルーム・掲示板詳細・カレンダー詳細）へ遷移する（`incoming_call`は着信情報が
+      プッシュのdataに載っておらず単純遷移では通話に参加できないため対象外）
+    - **副次的に発見した既存不具合も合わせて解消**：通知ON/OFFトグルが元々バックエンドに一切
+      保存されずローカルstateのみで消えていた（`SettingsScreen.tsx`/`SettingsPage.tsx`・
+      `NotificationStatusContext.tsx`のTODOコメント、Phase 8a時点から存在。web/mobile両方）。
+      `NotificationStatusContext`の`setStatus`をラップし、ローカルstate更新に加えて
+      `PUT /users/{userId}`（`notificationStatus`のみ、既存の自己更新カーブアウトで権限不要）を
+      呼ぶよう修正（web側は既存の`orgApi.updateUser`を再利用、mobile側は`orgApi`に
+      `updateOwnNotificationStatus`を新設）
+    - テスト：新規`infra/test/lambda/deliverPush.test.ts`（正常送信・対象0人・`DeviceNotRegistered`
+      でのトークン削除・`ok`ならトークン維持・未知typeは送信しない、5ケース）、
+      `users.test.ts`に`push-token`エンドポイントのケース3件、`pushNotification.test.ts`に
+      `senderName`/`bodyPreview`のケース2件追加。infra全171テスト・`cdk synth`・web build・
+      mobile tscが通過
+    - **実機検証**：`cdk deploy`で`OnConnect-dev`へ反映（`cdk diff`で新規Lambda・SNS
+      サブスクリプション・新規APIルートのみの想定通りの変更であることを確認してから実行）。
+      curlで`PUT /users/{userId}/push-token`にダミートークンを登録→掲示板へテスト投稿を作成→
+      `deliverPush.ts`のCloudWatch Logsで実際にExpo Push APIへのリクエストが発生し
+      エラー無く完了したこと、ダミートークンが`DeviceNotRegistered`としてDynamoDBから
+      自動削除されるプルーニング動作までを実機（実AWS環境）で確認した。iOSシミュレータでは
+      `xcrun simctl push`でAPNs往復を経ないローカル注入を行い、フォアグラウンド・
+      ホーム画面バナーいずれも正しいタイトル・本文で表示されることを確認したが、
+      **通知タップでの画面遷移は通知バナーの自動消滅とツール操作の往復レイテンシが重なり
+      実演できず**（Phase 11着信リスナーと同一の`navigationRef`パターンのため動作する見込み）。
+      **実機（本物のAPNs/FCM経由）での受信そのものは引き続き未検証**
+    - **コミット済み（`4404a06`）・push済み・`OnConnect-dev`へデプロイ済み**。
+      テスト用に一時登録したダミートークン・作成した掲示板投稿はいずれも確認後に削除・クリア済み
 
 ## 4. 現在のダミー登録ユーザーの設定
 
