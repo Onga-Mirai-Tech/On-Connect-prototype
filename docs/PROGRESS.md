@@ -1026,6 +1026,27 @@ Phase 12の実機検証では、curlでの直接API検証用に一時的にS3へ
     - **コミット済み（`48083b2`）・push済み**。実機（iOSシミュレータ）でのユーザーによる目視確認は
       チャット画面のみ完了、掲示板・カレンダー2画面は未確認のまま（コード上は同一パターンのため
       動作する見込みだが、次回セッションで確認が望ましい）
+39. **【Web版チャット・掲示板の改行消失バグ修正】**：38.の直後、ユーザーから「ブラウザ版のチャット・
+    掲示板でEnterキーを押しても改行されない。正確には送信・保存後に改行が消えた状態で表示される」
+    という追加報告があった。38.で確認した「Enterキーはtextareaで正しく改行として入力される・
+    フォームは自動送信されない」という結論自体は誤りではなく、**別の場所（表示側）に原因があった**：
+    - `apps/web/src/pages/ChatRoomPage.tsx`のメッセージ本文が`<div>{m.body}</div>`という
+      `white-space`指定の無いプレーンな`<div>`で表示されており、ブラウザのデフォルト空白折りたたみ
+      規則により`\n`が視覚的にスペースへ潰されていた
+    - `apps/web/src/pages/BulletinDetailPage.tsx`・`apps/web/src/components/HtmlEditor.tsx`
+      （本文プレビュー）の投稿本文は`dangerouslySetInnerHTML`でHTMLとして描画されており、同様に
+      `white-space`指定が無いため同じ理由で改行が消えていた
+    - いずれも`style`に`whiteSpace: "pre-wrap"`を追加する1行修正（データ側は元々正しく`\n`付きで
+      保存されていた。表示側のCSS不足のみが原因）。同根の問題がモバイル版掲示板詳細画面の
+      `WebView`（実HTMLレンダリングエンジン）にもあると判断し、`apps/mobile/src/screens/
+      BulletinDetailScreen.tsx`のhtmlテンプレートにも`white-space:pre-wrap;`を追加した
+      （こちらはユーザー報告の対象外だが同一原因のため予防的に対応。モバイルチャットの`<Text>`は
+      RN標準機能で`\n`を自動的に改行表示するため対象外）
+    - ブラウザで実際に確認：既存の`\n`入りメッセージ・投稿（過去のテストで作成されたもの）が
+      修正後に`white-space: pre-wrap`（`getComputedStyle`で確認）となり、DOM上の`\n`が
+      画面上の改行として表示されることを確認済み
+    - `npm run build --workspace apps/web`・`npx tsc --noEmit`（mobile）通過。infra側の変更は無し
+    - **コミット済み（`bef4e90`）・push済み**
 
 ## 4. 現在のダミー登録ユーザーの設定
 
