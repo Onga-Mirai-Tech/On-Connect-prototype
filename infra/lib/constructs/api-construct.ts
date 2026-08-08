@@ -115,6 +115,8 @@ export class ApiConstruct extends Construct {
     userItem.addMethod("DELETE", new apigateway.LambdaIntegration(usersFn), authOptions);
     const userResetPassword = userItem.addResource("reset-password");
     userResetPassword.addMethod("POST", new apigateway.LambdaIntegration(usersFn), authOptions);
+    const userPushToken = userItem.addResource("push-token");
+    userPushToken.addMethod("PUT", new apigateway.LambdaIntegration(usersFn), authOptions);
 
     // ロール・メンバーカテゴリの管理（5.1.3, 5.1.4）も同じLambda（usersFn）が扱う
     const rolesResource = this.restApi.root.addResource("roles");

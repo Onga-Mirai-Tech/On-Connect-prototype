@@ -116,4 +116,16 @@ export const orgApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  // --- 自分自身のプロフィール更新（Phase 13） ---
+  updatePushToken: (userId: string, expoPushToken: string | null) =>
+    authFetchJson<User>(`/users/${userId}/push-token`, {
+      method: "PUT",
+      body: JSON.stringify({ expoPushToken }),
+    }),
+  updateOwnNotificationStatus: (userId: string, notificationStatus: User["notificationStatus"]) =>
+    authFetchJson<User>(`/users/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify({ notificationStatus }),
+    }),
 };

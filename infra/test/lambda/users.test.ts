@@ -375,6 +375,92 @@ describe("Users CRUD", () => {
     expect(res.statusCode).toBe(403);
   });
 
+  test("PUT /users/{userId}/push-token は本人ならmanageUsers権限が無くても登録できる（Phase 13）", async () => {
+    const self: User = {
+      userId: "u5",
+      loginId: "staff05",
+      displayName: "自分",
+      furigana: "じぶん",
+      email: "self@example.com",
+      roleId: "role-member",
+      memberCategoryId: "cat-1",
+      notificationStatus: "ON",
+      permissions: allPermissionsOff,
+    };
+    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u5" } }).resolves({ Item: self });
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/users/{userId}/push-token",
+        httpMethod: "PUT",
+        pathParameters: { userId: "u5" },
+        body: JSON.stringify({ expoPushToken: "ExponentPushToken[abc]" }),
+        ...asUser("u5"),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).expoPushToken).toBe("ExponentPushToken[abc]");
+  });
+
+  test("PUT /users/{userId}/push-token は expoPushToken: null でトークンを削除する（Phase 13）", async () => {
+    const self: User = {
+      userId: "u5",
+      loginId: "staff05",
+      displayName: "自分",
+      furigana: "じぶん",
+      email: "self@example.com",
+      roleId: "role-member",
+      memberCategoryId: "cat-1",
+      notificationStatus: "ON",
+      permissions: allPermissionsOff,
+      expoPushToken: "ExponentPushToken[abc]",
+    };
+    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u5" } }).resolves({ Item: self });
+    ddbMock.on(PutCommand).resolves({});
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/users/{userId}/push-token",
+        httpMethod: "PUT",
+        pathParameters: { userId: "u5" },
+        body: JSON.stringify({ expoPushToken: null }),
+        ...asUser("u5"),
+      }),
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).expoPushToken).toBeUndefined();
+  });
+
+  test("PUT /users/{userId}/push-token は他人のuserIdを指定すると403（manageUsers権限があっても不可）", async () => {
+    const target: User = {
+      userId: "u6",
+      loginId: "staff06",
+      displayName: "他人",
+      furigana: "たにん",
+      email: "other@example.com",
+      roleId: "role-member",
+      memberCategoryId: "cat-1",
+      notificationStatus: "ON",
+      permissions: allPermissionsOff,
+    };
+    ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "u6" } }).resolves({ Item: target });
+    mockCallerAsAdmin();
+
+    const res = await invoke(
+      buildEvent({
+        resource: "/users/{userId}/push-token",
+        httpMethod: "PUT",
+        pathParameters: { userId: "u6" },
+        body: JSON.stringify({ expoPushToken: "ExponentPushToken[xyz]" }),
+      }),
+    );
+
+    expect(res.statusCode).toBe(403);
+  });
+
   test("PUT /users/{userId} で最後の管理者(本人)からmanageUsersを外そうとすると409", async () => {
     const adminUser: User = {
       userId: "u1",

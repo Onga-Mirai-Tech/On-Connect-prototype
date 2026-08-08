@@ -48,6 +48,8 @@ export interface User {
   notificationStatus: NotificationStatus;
   permissions: RolePermissions;
   className?: string;
+  /** Expo Push Notification Serviceのプッシュトークン（Phase 13）。端末は1ユーザー1件、最終ログイン端末で上書きされる */
+  expoPushToken?: string;
 }
 
 export type MessageStatus = "scheduled" | "sent";

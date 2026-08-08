@@ -7,6 +7,8 @@ import {
   fetchAuthSession,
 } from "aws-amplify/auth";
 import type { User } from "@on-connect/shared";
+import { orgApi } from "../api/orgApi";
+import { registerForPushNotificationsAsync } from "../api/pushNotifications";
 
 type SignInResult =
   | { status: "SIGNED_IN" }
@@ -59,6 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { userId } = await getCurrentUser();
       setCurrentUserId(userId);
       setCurrentUser(await fetchOwnProfile(userId));
+      // 起動時の既存セッション復元・ログイン成功のいずれもここを通るため、プッシュトークン登録は
+      // ここ一箇所にまとめる（失敗してもログイン自体は成立させる、fire-and-forget）
+      void registerForPushNotificationsAsync(userId);
     } catch {
       setCurrentUserId(undefined);
       setCurrentUser(undefined);
@@ -101,6 +106,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    if (currentUserId) {
+      // この端末に他ユーザーがログインし直した際に前のユーザー宛の通知が届かないよう、トークンを消す
+      await orgApi.updatePushToken(currentUserId, null).catch(() => {});
+    }
     await amplifySignOut();
     setCurrentUserId(undefined);
     setCurrentUser(undefined);

@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, type ComponentProps } from "react";
+import * as Notifications from "expo-notifications";
 
 import { LoginScreen } from "../screens/LoginScreen";
 import { ChatListScreen } from "../screens/ChatListScreen";
@@ -205,10 +206,49 @@ function HomeTabs() {
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 /**
+ * プッシュ通知タップ時、data.typeに応じて該当画面へ遷移する（Phase 13）。
+ * navigationRefはRootStack起点のため、ネストしたタブ・スタックへは`screen`/`params`を入れ子にして辿る。
+ * incoming_callは着信情報（Meeting/Attendee等）がプッシュのdataには載っておらず、単純な画面遷移では
+ * 通話に参加できないため対象外（Home＝チャット一覧を開く程度に留める）。
+ */
+function navigateFromPushNotificationData(data: Record<string, unknown>) {
+  if (!navigationRef.isReady()) return;
+  switch (data.type) {
+    case "chat_message":
+      if (typeof data.roomId === "string") {
+        navigationRef.navigate("Home", {
+          screen: "ChatTab",
+          params: { screen: "ChatRoom", params: { roomId: data.roomId } },
+        } as never);
+      }
+      return;
+    case "bulletin_post":
+      if (typeof data.postId === "string") {
+        navigationRef.navigate("Home", {
+          screen: "BulletinTab",
+          params: { screen: "BulletinDetail", params: { postId: data.postId } },
+        } as never);
+      }
+      return;
+    case "calendar_reminder":
+      if (typeof data.eventId === "string") {
+        navigationRef.navigate("Home", {
+          screen: "Calendar",
+          params: { screen: "CalendarDetail", params: { eventId: data.eventId } },
+        } as never);
+      }
+      return;
+    default:
+      navigationRef.navigate("Home", undefined as never);
+  }
+}
+
+/**
  * 未ログイン時はLogin画面のみ、ログイン中はHome/IncomingCallのみを登録する（Phase 8a）。
  * サインイン成功でAuthContextのcurrentUserIdが更新されると、この分岐が自動的に切り替わる。
  * ログイン中は常時onIncomingCallを購読し、着信を受けたらどの画面を見ていても着信画面へ切り替える
  * （Phase 11、Web版のrouter.tsxのRequireAuthと同じ役割）。
+ * 同様にログイン中は常時プッシュ通知のタップ応答も購読し、該当画面へ遷移する（Phase 13）。
  */
 export function AppNavigator() {
   const { currentUserId } = useAuth();
@@ -228,6 +268,14 @@ export function AppNavigator() {
       });
     });
     return unsubscribe;
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      navigateFromPushNotificationData(response.notification.request.content.data ?? {});
+    });
+    return () => subscription.remove();
   }, [currentUserId]);
 
   return (

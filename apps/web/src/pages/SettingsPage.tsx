@@ -8,7 +8,6 @@ export function SettingsPage() {
 
   const toggle = () => {
     setStatus(status === "ON" ? "OFF" : "ON");
-    // TODO: PUT /users/{userId} で notificationStatus を更新する
   };
 
   return (

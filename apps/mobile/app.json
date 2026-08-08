@@ -17,7 +17,10 @@
       "supportsTablet": false,
       "bundleIdentifier": "tech.ongamirai.onconnect",
       "infoPlist": {
-        "UIBackgroundModes": ["voip", "audio"],
+        "UIBackgroundModes": [
+          "voip",
+          "audio"
+        ],
         "NSMicrophoneUsageDescription": "音声通話でマイクを使用します",
         "NSCameraUsageDescription": "チャット・掲示板に写真を添付するためカメラを使用します",
         "NSPhotoLibraryUsageDescription": "チャット・掲示板に写真を添付するためカメラロールを使用します"
@@ -29,7 +32,10 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#66FFCC"
       },
-      "permissions": ["RECORD_AUDIO", "CAMERA"]
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -43,6 +49,12 @@
           "cameraPermission": "チャット・掲示板に写真を添付するためカメラを使用します"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b8b4059e-7f60-4ba3-9d98-8e0f0d953025"
+      }
+    },
+    "owner": "onga-mirai-tech"
   }
 }

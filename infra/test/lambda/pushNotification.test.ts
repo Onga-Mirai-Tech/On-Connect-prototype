@@ -56,6 +56,7 @@ beforeEach(() => {
   ddbMock.reset();
   snsMock.reset();
   ddbMock.on(GetCommand, { TableName: "test-ChatRooms", Key: { roomId: "room-1" } }).resolves({ Item: room });
+  ddbMock.on(GetCommand, { TableName: "test-Users", Key: { userId: "sender-1" } }).resolves({ Item: {} });
 });
 
 test("forceNotifyがtrueの場合、メンションの有無やnotificationStatusを無視してルーム全員に通知する", async () => {
@@ -163,6 +164,37 @@ test("予約送信の配信（MODIFY: status scheduled→sent）は通知対象�
   expect(snsMock.commandCalls(PublishCommand)).toHaveLength(1);
   const payload = JSON.parse(snsMock.commandCalls(PublishCommand)[0].args[0].input.Message as string);
   expect(payload.targetUserIds).toEqual(["member-2"]);
+});
+
+test("Phase 13: payloadに送信者displayNameとbodyPreview（本文の切り詰め）を含める", async () => {
+  mockUsers([
+    { userId: "member-2", notificationStatus: "ON" },
+    { userId: "member-3", notificationStatus: "OFF" },
+  ]);
+  ddbMock
+    .on(GetCommand, { TableName: "test-Users", Key: { userId: "sender-1" } })
+    .resolves({ Item: { userId: "sender-1", displayName: "テスト送信者" } });
+  const longBody = "あ".repeat(100);
+  const message = buildMessage({ body: longBody });
+
+  await handler(buildEvent(message), {} as never, (() => {}) as never);
+
+  const payload = JSON.parse(snsMock.commandCalls(PublishCommand)[0].args[0].input.Message as string);
+  expect(payload.senderName).toBe("テスト送信者");
+  expect(payload.bodyPreview).toBe(`${"あ".repeat(80)}…`);
+});
+
+test("Phase 13: 送信者のdisplayNameが取得できない場合はフォールバック文言を使う", async () => {
+  mockUsers([
+    { userId: "member-2", notificationStatus: "ON" },
+    { userId: "member-3", notificationStatus: "OFF" },
+  ]);
+  const message = buildMessage();
+
+  await handler(buildEvent(message), {} as never, (() => {}) as never);
+
+  const payload = JSON.parse(snsMock.commandCalls(PublishCommand)[0].args[0].input.Message as string);
+  expect(payload.senderName).toBe("メンバー");
 });
 
 test("MODIFYでもstatusがscheduled→sent以外の変化（既読更新等）は通知しない", async () => {

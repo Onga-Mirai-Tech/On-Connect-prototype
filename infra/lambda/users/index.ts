@@ -46,6 +46,10 @@ export const handler: APIGatewayProxyHandler = async (event) =>
       const userId = requireParam(event, "userId");
       if (httpMethod === "POST") return resetUserPassword(userId, event);
     }
+    if (resource === "/users/{userId}/push-token") {
+      const userId = requireParam(event, "userId");
+      if (httpMethod === "PUT") return updatePushToken(userId, event);
+    }
     if (resource === "/roles") {
       if (httpMethod === "GET") return listRoles();
       if (httpMethod === "POST") return createRole(event);
@@ -181,6 +185,26 @@ async function updateUser(userId: string, event: APIGatewayProxyEvent) {
     userId, // パスパラメータを正とする
   };
 
+  await docClient.send(new PutCommand({ TableName: USERS_TABLE_NAME, Item: updated }));
+  return jsonResponse(200, updated);
+}
+
+/**
+ * Expo Push Notification Serviceのプッシュトークン登録（Phase 13）。本人のみ、管理者権限は不要
+ * （updateUserのnotificationStatusカーブアウトとは別の専用エンドポイントとして新設し、
+ * updateUserの権限判定ロジックには手を入れない）。端末は1ユーザー1件、最終ログイン端末で上書きする。
+ * expoPushToken: null を送るとトークンを削除する（ログアウト時等）。
+ */
+async function updatePushToken(userId: string, event: APIGatewayProxyEvent) {
+  if (getCurrentUserId(event) !== userId) {
+    throw new HttpError(403, "本人のプッシュトークンのみ登録できます");
+  }
+
+  const input = parseJsonBody<{ expoPushToken: string | null }>(event);
+  const current = await fetchUser(userId);
+  if (!current) throw new HttpError(404, "ユーザーが見つかりません");
+
+  const updated: User = { ...current, expoPushToken: input.expoPushToken ?? undefined, userId };
   await docClient.send(new PutCommand({ TableName: USERS_TABLE_NAME, Item: updated }));
   return jsonResponse(200, updated);
 }

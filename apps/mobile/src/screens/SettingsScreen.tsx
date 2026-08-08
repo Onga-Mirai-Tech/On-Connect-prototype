@@ -9,7 +9,6 @@ export function SettingsScreen() {
 
   const toggle = (value: boolean) => {
     setStatus(value ? "ON" : "OFF");
-    // TODO: PUT /users/{userId} で notificationStatus を更新する
   };
 
   return (

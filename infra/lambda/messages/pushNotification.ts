@@ -36,11 +36,15 @@ export const handler: DynamoDBStreamHandler = async (event) => {
     const targetUserIds = await resolveTargetUserIds(message);
     if (targetUserIds.length === 0) continue;
 
+    const sender = await fetchUserDisplayName(message.senderId);
+
     await publishPush(PUSH_TOPIC_ARN, {
       type: "chat_message",
       roomId: message.roomId,
       messageId: message.messageId,
       senderId: message.senderId,
+      senderName: sender ?? "メンバー",
+      bodyPreview: truncateBody(message.body),
       forceNotify: message.forceNotify,
       targetUserIds,
     });
@@ -72,6 +76,19 @@ async function resolveTargetUserIds(message: Message): Promise<string[]> {
 
   const users = await fetchUsers(candidateIds);
   return users.filter((u) => u.notificationStatus === "ON").map((u) => u.userId);
+}
+
+/** プッシュ通知本文のプレビュー用に、長いメッセージを適当な長さで切り詰める */
+function truncateBody(body: string): string {
+  const MAX_LENGTH = 80;
+  return body.length > MAX_LENGTH ? `${body.slice(0, MAX_LENGTH)}…` : body;
+}
+
+async function fetchUserDisplayName(userId: string): Promise<string | undefined> {
+  const result = await docClient.send(
+    new GetCommand({ TableName: USERS_TABLE_NAME, Key: { userId }, ProjectionExpression: "displayName" }),
+  );
+  return (result?.Item as Pick<User, "displayName"> | undefined)?.displayName;
 }
 
 async function fetchRoom(roomId: string): Promise<ChatRoom | undefined> {

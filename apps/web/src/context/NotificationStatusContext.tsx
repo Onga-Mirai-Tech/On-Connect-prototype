@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import type { NotificationStatus } from "@on-connect/shared";
 import { useAuth } from "./AuthContext";
+import { orgApi } from "../api/orgApi";
 
 interface NotificationStatusContextValue {
   status: NotificationStatus;
@@ -12,15 +13,24 @@ const NotificationStatusContext = createContext<NotificationStatusContextValue |
 /**
  * ログイン中メンバーの通知ステータス（ON/OFF）をヘッダーと個人設定画面で共有する。
  * 初期値はAuthContextが取得した自分のプロフィール（currentUser）から取る（Phase 8a）。
- * TODO: 変更時にサーバー側のnotificationStatusと同期する（現状はローカルstateのみ）。
+ * setStatusはローカルstateを即時反映しつつバックエンドへも同期する（失敗時は他のAPI呼び出しと
+ * 同じくローカルstateのフォールバックのまま、ユーザー操作は妨げない。Phase 13で解消：
+ * 従来は変更してもサーバー側に一切保存されずローカルstateのみで消えていた）。
  */
 export function NotificationStatusProvider({ children }: { children: ReactNode }) {
-  const { currentUser } = useAuth();
-  const [status, setStatus] = useState<NotificationStatus>(currentUser?.notificationStatus ?? "ON");
+  const { currentUser, currentUserId } = useAuth();
+  const [status, setStatusState] = useState<NotificationStatus>(currentUser?.notificationStatus ?? "ON");
 
   useEffect(() => {
-    if (currentUser?.notificationStatus) setStatus(currentUser.notificationStatus);
+    if (currentUser?.notificationStatus) setStatusState(currentUser.notificationStatus);
   }, [currentUser?.notificationStatus]);
+
+  const setStatus = (next: NotificationStatus) => {
+    setStatusState(next);
+    if (currentUserId) {
+      orgApi.updateUser(currentUserId, { notificationStatus: next }).catch(() => {});
+    }
+  };
 
   return (
     <NotificationStatusContext.Provider value={{ status, setStatus }}>
