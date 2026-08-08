@@ -136,7 +136,7 @@ export function BulletinDetailScreen({ route, navigation }: Props) {
               ) : (
                 <WebView
                   originWhitelist={["*"]}
-                  source={{ html: `<html><body style="font-family:-apple-system,sans-serif;font-size:14px;margin:0;">${post.body}</body></html>` }}
+                  source={{ html: `<html><body style="font-family:-apple-system,sans-serif;font-size:14px;margin:0;white-space:pre-wrap;">${post.body}</body></html>` }}
                   style={styles.webview}
                 />
               )}

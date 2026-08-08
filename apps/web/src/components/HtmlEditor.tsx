@@ -81,7 +81,7 @@ export function HtmlEditor({ value, onChange }: HtmlEditorProps) {
       <div style={{ marginTop: 8 }}>
         <div style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4 }}>プレビュー</div>
         <div
-          style={{ border: `1px solid ${colors.surface}`, borderRadius: 12, padding: 12, minHeight: 60 }}
+          style={{ border: `1px solid ${colors.surface}`, borderRadius: 12, padding: 12, minHeight: 60, whiteSpace: "pre-wrap" }}
           // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: value || "<p style=\"color:#9CA3AF\">（本文プレビュー）</p>" }}
         />

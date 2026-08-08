@@ -103,7 +103,7 @@ export function BulletinDetailPage() {
         {post.visibleCategoryIds.length > 0 && <span>・公開範囲限定</span>}
       </div>
       <div
-        style={{ border: `1px solid ${colors.surface}`, borderRadius: 14, padding: 16 }}
+        style={{ border: `1px solid ${colors.surface}`, borderRadius: 14, padding: 16, whiteSpace: "pre-wrap" }}
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: post.body }}
       />

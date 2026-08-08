@@ -273,7 +273,7 @@ export function ChatRoomPage() {
                     <AtSign size={12} /> {m.mentionedUserIds.map((id) => memberName(id)).join("、")} 宛
                   </div>
                 )}
-                {m.body && <div>{m.body}</div>}
+                {m.body && <div style={{ whiteSpace: "pre-wrap" }}>{m.body}</div>}
                 <AttachmentList attachments={m.attachments} context="chat" ownerId={roomId} />
               </div>
               <div style={{ marginTop: 4 }}>
